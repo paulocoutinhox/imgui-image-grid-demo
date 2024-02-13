@@ -3,7 +3,6 @@
 #include "backends/imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
 #include <iostream>
-#include <thread>
 #include <vector>
 #include <chrono>
 #include <filesystem>
@@ -79,7 +78,7 @@ int main() {
 
     GLFWwindow* videoWindow = nullptr;
 
-/*
+    /*
     GLFWwindow* videoWindow = glfwCreateWindow(1024, 768, "Video Player", nullptr, nullptr);
     if (videoWindow == nullptr) {
         std::cerr << "Error creating GLFW video window." << std::endl;
@@ -92,7 +91,7 @@ int main() {
 */
 
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
+    glfwSwapInterval(1); // Enable vsync
 
     // ImGui initialization
     IMGUI_CHECKVERSION();
@@ -127,41 +126,41 @@ int main() {
 
     double fps = video.get(cv::CAP_PROP_FPS);
     auto frameDuration = std::chrono::milliseconds(static_cast<int>(1000 / fps));
+    std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
 
     while (!glfwWindowShouldClose(window)) {
         auto frameStartTime = std::chrono::high_resolution_clock::now(); // for video frame
 
-        if (videoWindow) {
-            glfwMakeContextCurrent(videoWindow);
-            glfwPollEvents();
-        }
-
         glfwMakeContextCurrent(window);
         glfwPollEvents();
 
-        if (video.read(frame)) {
-            // Convert BGR to RGBA
-            cv::Mat frameRGBA;
-            cv::cvtColor(frame, frameRGBA, cv::COLOR_BGR2RGBA);
+        auto currentTime = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastFrameTime) >= frameDuration) {
+            if (video.read(frame)) {
+                // Convert BGR to RGBA
+                cv::Mat frameRGBA;
+                cv::cvtColor(frame, frameRGBA, cv::COLOR_BGR2RGBA);
 
-            // Update video texture
-            if (videoTexture == 0) {
-                glGenTextures(1, &videoTexture);
+                // Update video texture
+                if (videoTexture == 0) {
+                    glGenTextures(1, &videoTexture);
+                    glBindTexture(GL_TEXTURE_2D, videoTexture);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                }
                 glBindTexture(GL_TEXTURE_2D, videoTexture);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            }
-            glBindTexture(GL_TEXTURE_2D, videoTexture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frameRGBA.cols, frameRGBA.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, frameRGBA.data);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frameRGBA.cols, frameRGBA.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, frameRGBA.data);
 
-            if (videoWidth == 0 || videoHeight == 0) {
-                videoWidth = frame.cols;
-                videoHeight = frame.rows;
+                if (videoWidth == 0 || videoHeight == 0) {
+                    videoWidth = frame.cols;
+                    videoHeight = frame.rows;
+                }
+
+                lastFrameTime = currentTime;
+            } else {
+                // Restart video playback when reaching the end
+                video.set(cv::CAP_PROP_POS_FRAMES, 0);
             }
-        } else {
-            // Restart video playback when reaching the end
-            video.set(cv::CAP_PROP_POS_FRAMES, 0);
-            continue; // Skip to next iteration of the loop to avoid delays
         }
 
         // ImGui rendering
@@ -182,7 +181,12 @@ int main() {
         }
         ImGui::End();
 
-        // Render video
+        // Render video        
+        if (videoWindow) {
+            glfwMakeContextCurrent(videoWindow);
+            glfwPollEvents();
+        }
+
         if (videoTexture != 0) {
             ImGui::Begin("Video Player", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -221,22 +225,13 @@ int main() {
 
         // Render ImGui
         ImGui::Render();
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
-        glViewport(0, 0, display_w, display_h);
+        int displayW, displayH;
+        glfwGetFramebufferSize(window, &displayW, &displayH);
+        glViewport(0, 0, displayW, displayH);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
-
-        // Calculate how long to wait until the next frame
-        auto frameEndTime = std::chrono::high_resolution_clock::now();
-        auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(frameEndTime - frameStartTime);
-        auto timeToWait = frameDuration - elapsedTime;
-
-        if (timeToWait.count() > 0) {
-            std::this_thread::sleep_for(timeToWait);
-        }
     }
 
     // Cleanup
