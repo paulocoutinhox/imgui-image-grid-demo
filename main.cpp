@@ -1,20 +1,16 @@
-extern "C" {
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libswscale/swscale.h>
-#include <libavutil/time.h>
-#include <libavutil/imgutils.h>
-}
-
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include <thread>
 #include <vector>
+#include <chrono>
 #include <filesystem>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#include <opencv2/opencv.hpp>
 
 namespace fs = std::filesystem;
 
@@ -23,13 +19,14 @@ struct ImageTexture {
     int width, height;
 };
 
+// Function to load texture from image
 ImageTexture LoadTextureFromImage(const char* imagePath) {
     ImageTexture imgTexture = {0, 0, 0};
     int width, height, channels;
     unsigned char* data = stbi_load(imagePath, &width, &height, &channels, 0);
     if (data == nullptr) {
-        std::cerr << "Erro ao carregar imagem: " << imagePath << std::endl;
-        return imgTexture; // Retorna textureID = 0 como erro
+        std::cerr << "Error loading image: " << imagePath << std::endl;
+        return imgTexture;
     }
 
     glGenTextures(1, &imgTexture.textureID);
@@ -46,67 +43,30 @@ ImageTexture LoadTextureFromImage(const char* imagePath) {
     return imgTexture;
 }
 
-bool InitVideo(const char* filename, AVFormatContext*& formatCtx, AVCodecContext*& codecCtx, int& videoStreamIndex) {
-    if (avformat_open_input(&formatCtx, filename, nullptr, nullptr) != 0) {
-        std::cerr << "Failed to open video file: " << filename << std::endl;
-        return false;
-    }
-
-    if (avformat_find_stream_info(formatCtx, nullptr) < 0) {
-        std::cerr << "Failed to find stream information." << std::endl;
-        avformat_close_input(&formatCtx);
-        return false;
-    }
-
-    videoStreamIndex = -1;
-    for (unsigned i = 0; i < formatCtx->nb_streams; i++) {
-        if (formatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            videoStreamIndex = i;
-            break;
-        }
-    }
-
-    if (videoStreamIndex == -1) {
-        std::cerr << "Failed to find a video stream." << std::endl;
-        avformat_close_input(&formatCtx);
-        return false;
-    }
-
-    AVCodecParameters* codecParams = formatCtx->streams[videoStreamIndex]->codecpar;
-    const AVCodec* codec = avcodec_find_decoder(codecParams->codec_id);
-    codecCtx = avcodec_alloc_context3(codec);
-    avcodec_parameters_to_context(codecCtx, codecParams);
-    if (avcodec_open2(codecCtx, codec, nullptr) < 0) {
-        std::cerr << "Failed to open codec." << std::endl;
-        avcodec_free_context(&codecCtx);
-        avformat_close_input(&formatCtx);
-        return false;
-    }
-
-    return true;
-}
-
 int main() {
     if (!glfwInit()) {
-        std::cerr << "Erro ao inicializar GLFW." << std::endl;
+        std::cerr << "Error initializing GLFW." << std::endl;
         return -1;
     }
 
-#ifdef __APPLE__
+    // GLFW window creation
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    GLFWwindow* window = glfwCreateWindow(1024, 768, "Imagens em Grid com ImGui", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1024, 768, "Image Grid with ImGui", nullptr, nullptr);
     if (window == nullptr) {
-        std::cerr << "Erro ao criar janela GLFW." << std::endl;
+        std::cerr << "Error creating GLFW window." << std::endl;
+        glfwTerminate();
         return -1;
     }
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
+    // ImGui initialization
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -114,6 +74,7 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 410");
 
+    // Load images from directory
     std::vector<ImageTexture> textures;
     std::string pathToImages = "images";
 
@@ -123,38 +84,58 @@ int main() {
         }
     }
 
-    // Initialize FFmpeg for video decoding
-    AVFormatContext* formatCtx = nullptr;
-    AVCodecContext* codecCtx = nullptr;
-    int videoStreamIndex = -1;
-
-    if (!InitVideo("videos/video1.mp4", formatCtx, codecCtx, videoStreamIndex)) {
-        return EXIT_FAILURE;
+    // Open video file
+    cv::VideoCapture video("videos/video1.mp4");
+    if (!video.isOpened()) {
+        std::cerr << "Error opening video." << std::endl;
+        return -1;
     }
 
-    AVFrame* frame = av_frame_alloc();
-    AVPacket* packet = av_packet_alloc();
-    SwsContext* swsCtx = sws_getContext(codecCtx->width, codecCtx->height, codecCtx->pix_fmt,
-                                        codecCtx->width, codecCtx->height, AV_PIX_FMT_RGB24,
-                                        SWS_BILINEAR, nullptr, nullptr, nullptr);
-    GLuint textureID = 0;
-    glGenTextures(1, &textureID);
+    cv::Mat frame;
+    GLuint videoTexture = 0;
 
-    bool frameReady = false;
-    double lastFrameTime = 0;
+    int videoWidth = 0;
+    int videoHeight = 0;
 
-    // Main Loop
+    double fps = video.get(cv::CAP_PROP_FPS);
+    auto frameDuration = std::chrono::milliseconds(static_cast<int>(1000 / fps));
+
     while (!glfwWindowShouldClose(window)) {
+        auto frameStartTime = std::chrono::high_resolution_clock::now(); // for video frame
+
         glfwPollEvents();
 
+        if (video.read(frame)) {
+            // Convert BGR to RGBA
+            cv::Mat frameRGBA;
+            cv::cvtColor(frame, frameRGBA, cv::COLOR_BGR2RGBA);
+
+            // Update video texture
+            if (videoTexture == 0) {
+                glGenTextures(1, &videoTexture);
+                glBindTexture(GL_TEXTURE_2D, videoTexture);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            }
+            glBindTexture(GL_TEXTURE_2D, videoTexture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frameRGBA.cols, frameRGBA.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, frameRGBA.data);
+
+            if (videoWidth == 0 || videoHeight == 0) {
+                videoWidth = frame.cols;
+                videoHeight = frame.rows;
+            }
+        } else {
+            // Restart video playback when reaching the end
+            video.set(cv::CAP_PROP_POS_FRAMES, 0);
+            continue; // Skip to next iteration of the loop to avoid delays
+        }
+
+        // ImGui rendering
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        /////////////////////////////////////////////////
         // Render image grid
-        /////////////////////////////////////////////////
-
         ImGui::Begin("Images");
         float windowWidth = ImGui::GetContentRegionAvail().x;
         int imagesPerRow = std::max(1, static_cast<int>(windowWidth / 100.0f));
@@ -167,62 +148,44 @@ int main() {
         }
         ImGui::End();
 
-        /////////////////////////////////////////////////
         // Render video
-        /////////////////////////////////////////////////
+        if (videoTexture != 0) {
+            ImGui::Begin("Video Player", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-        if (av_read_frame(formatCtx, packet) >= 0) {
-            if (packet->stream_index == videoStreamIndex) {
-                if (avcodec_send_packet(codecCtx, packet) == 0) {
-                    while (avcodec_receive_frame(codecCtx, frame) == 0) {
-                        // Ensure the texture ID is generated outside the loop, only once
-                        if (textureID == 0) {
-                            glGenTextures(1, &textureID);
-                            glBindTexture(GL_TEXTURE_2D, textureID);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-                        }
+            // Get total window dimensions from ImGui
+            ImVec2 windowSize = ImGui::GetContentRegionAvail();
 
-                        // Prepare buffer for RGB data
-                        uint8_t* dstData[1]; // data pointers
-                        int dstLinesize[1]; // linesize
-                        int outputWidth = codecCtx->width;
-                        int outputHeight = codecCtx->height;
-                        av_image_alloc(dstData, dstLinesize, outputWidth, outputHeight, AV_PIX_FMT_RGB24, 1);
+            // Calculate video aspect ratio
+            float videoAspectRatio = (float)videoWidth / (float)videoHeight;
 
-                        // Convert the frame from its native format to RGB
-                        sws_scale(swsCtx, frame->data, frame->linesize, 0, codecCtx->height, dstData, dstLinesize);
-
-                        // Update the OpenGL texture with the new frame
-                        glBindTexture(GL_TEXTURE_2D, textureID);
-                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, outputWidth, outputHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, dstData[0]);
-
-                        // Free the image buffer after use
-                        av_freep(&dstData[0]);
-
-                        // Draw the video in a Dear ImGui window
-                        ImGui::Begin("Video Player");
-                        ImGui::Image((void*)(intptr_t)textureID, ImVec2(outputWidth, outputHeight));
-                        ImGui::End();
-                    }
-                }
-                av_packet_unref(packet);
+            // Calculate image size based on video and window aspect ratio
+            ImVec2 imageSize;
+            if (windowSize.x / windowSize.y > videoAspectRatio) {
+                // Window is wider than video
+                imageSize.x = windowSize.y * videoAspectRatio;
+                imageSize.y = windowSize.y;
+            } else {
+                // Window is taller than video
+                imageSize.x = windowSize.x;
+                imageSize.y = windowSize.x / videoAspectRatio;
             }
-        } else {
-            // If the end of the video file is reached, seek back to the beginning
-            av_seek_frame(formatCtx, videoStreamIndex, 0, AVSEEK_FLAG_BACKWARD);
-            avcodec_flush_buffers(codecCtx);
-        }
 
-        // Draw the video in a Dear ImGui window
-        if (frameReady) {
-            ImGui::Begin("Video Player");
-            ImGui::Image((void*)(intptr_t)textureID, ImVec2(codecCtx->width, codecCtx->height));
+            // Calculate position to center the image in the window
+            ImVec2 imagePos = ImVec2(
+                ImGui::GetCursorPos().x + (windowSize.x - imageSize.x) * 0.5f, // X position for centering
+                ImGui::GetCursorPos().y + (windowSize.y - imageSize.y) * 0.5f  // Y position for centering
+                );
+
+            // Apply calculated position
+            ImGui::SetCursorPos(imagePos);
+
+            // Render video image with adjusted size and position
+            ImGui::Image((void*)(intptr_t)videoTexture, imageSize);
+
             ImGui::End();
         }
 
-        // render frame
+        // Render ImGui
         ImGui::Render();
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
@@ -231,45 +194,25 @@ int main() {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
+
+        // Calculate how long to wait until the next frame
+        auto frameEndTime = std::chrono::high_resolution_clock::now();
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(frameEndTime - frameStartTime);
+        auto timeToWait = frameDuration - elapsedTime;
+
+        if (timeToWait.count() > 0) {
+            std::this_thread::sleep_for(timeToWait);
+        }
     }
 
-    /////////////////////////////////////////////////////////////
-    // dealloc video
-    /////////////////////////////////////////////////////////////
-
-    // Free the frame and packet
-    av_frame_free(&frame);
-    av_packet_free(&packet);
-
-    // Free the SwsContext
-    sws_freeContext(swsCtx);
-
-    // Close the codec context
-    if (codecCtx) {
-        avcodec_close(codecCtx);
-        avcodec_free_context(&codecCtx);
+    // Cleanup
+    if (videoTexture != 0) {
+        glDeleteTextures(1, &videoTexture);
     }
 
-    // Close the video file/format context
-    if (formatCtx) {
-        avformat_close_input(&formatCtx);
+    for (auto& texture : textures) {
+        glDeleteTextures(1, &texture.textureID);
     }
-
-    // Delete the OpenGL texture
-    if (textureID != 0) {
-        glDeleteTextures(1, &textureID);
-    }
-
-    /////////////////////////////////////////////////////////////
-    // dealloc textures
-    /////////////////////////////////////////////////////////////
-    for (auto& tex : textures) {
-        glDeleteTextures(1, &tex.textureID);
-    }
-
-    /////////////////////////////////////////////////////////////
-    // dealloc imgui
-    /////////////////////////////////////////////////////////////
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
