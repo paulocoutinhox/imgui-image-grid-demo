@@ -43,6 +43,19 @@ ImageTexture LoadTextureFromImage(const char* imagePath) {
     return imgTexture;
 }
 
+void windowCloseCallback(GLFWwindow* window) {
+    glfwDestroyWindow(window);
+}
+
+void windowKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    auto altF4 = (key == GLFW_KEY_W && mods == GLFW_MOD_SUPER);
+    auto commandQ = (key == GLFW_KEY_F4 && mods == GLFW_MOD_ALT && action == GLFW_PRESS);
+
+    if (altF4 || commandQ) {
+        glfwDestroyWindow(window);
+    }
+}
+
 int main() {
     if (!glfwInit()) {
         std::cerr << "Error initializing GLFW." << std::endl;
@@ -63,6 +76,21 @@ int main() {
         glfwTerminate();
         return -1;
     }
+
+    GLFWwindow* videoWindow = nullptr;
+
+/*
+    GLFWwindow* videoWindow = glfwCreateWindow(1024, 768, "Video Player", nullptr, nullptr);
+    if (videoWindow == nullptr) {
+        std::cerr << "Error creating GLFW video window." << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    glfwSetWindowCloseCallback(videoWindow, windowCloseCallback);
+    glfwSetKeyCallback(videoWindow, windowKeyCallback);
+*/
+
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
@@ -103,6 +131,12 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
         auto frameStartTime = std::chrono::high_resolution_clock::now(); // for video frame
 
+        if (videoWindow) {
+            glfwMakeContextCurrent(videoWindow);
+            glfwPollEvents();
+        }
+
+        glfwMakeContextCurrent(window);
         glfwPollEvents();
 
         if (video.read(frame)) {
@@ -217,6 +251,10 @@ int main() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+
+    if (videoWindow) {
+        glfwDestroyWindow(videoWindow);
+    }
 
     glfwDestroyWindow(window);
     glfwTerminate();
