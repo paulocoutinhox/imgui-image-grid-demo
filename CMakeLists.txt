@@ -23,7 +23,7 @@ CPMAddPackage(
 CPMAddPackage(
   NAME imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
-  VERSION 1.90.2
+  GIT_TAG docking
   DOWNLOAD_ONLY YES
 )
 
@@ -76,3 +76,8 @@ add_custom_command(TARGET demo POST_BUILD
 add_custom_command(TARGET demo POST_BUILD
                    COMMAND ${CMAKE_COMMAND} -E copy_directory
                    ${CMAKE_SOURCE_DIR}/videos $<TARGET_FILE_DIR:demo>/videos)
+
+# Command to copy fonts
+add_custom_command(TARGET demo POST_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_directory
+                   ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:demo>/fonts)

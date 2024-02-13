@@ -42,6 +42,80 @@ ImageTexture LoadTextureFromImage(const char* imagePath) {
     return imgTexture;
 }
 
+void TextAutoSizedAndCentered(const std::string& text, ImFont* font) {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Define padding
+    float paddingX = 20.0f; // Horizontal padding
+    float paddingY = 20.0f; // Vertical padding
+
+    // Calculates available area considering padding
+    float availableWidth = io.DisplaySize.x - 2 * paddingX;
+    float availableHeight = io.DisplaySize.y - 2 * paddingY;
+
+    // Finds the required width for the text and the number of lines
+    float maxLineWidth = 0.0f;
+    int lineCount = 0;
+    std::istringstream stream(text);
+    std::string line;
+    while (std::getline(stream, line)) {
+        ImVec2 lineSize = font->CalcTextSizeA(font->FontSize, FLT_MAX, 0.0f, line.c_str());
+        if (lineSize.x > maxLineWidth) {
+            maxLineWidth = lineSize.x;
+        }
+        lineCount++;
+    }
+
+    // Adjusts the font size if the longest line is wider than the available space
+    float scaleFactor = (maxLineWidth > availableWidth) ? (availableWidth / maxLineWidth) : 1.0f;
+    float fontSize = font->FontSize * scaleFactor;
+
+    // Ensures the text block fits vertically within the available height
+    float totalTextHeight = fontSize * lineCount;
+
+    if (totalTextHeight > availableHeight) {
+        fontSize *= availableHeight / totalTextHeight;
+    }
+
+    // Prepares to draw the text
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+
+    // Text and outline colors
+    ImU32 textColor = IM_COL32(255, 255, 255, 255);
+    ImU32 outlineColor = IM_COL32(0, 0, 0, 255);
+
+    // Resets the stream to draw the text
+    stream.clear();
+    stream.seekg(0, std::ios::beg);
+
+    // Calculates the starting y position to center the text block vertically
+    float textPosY = (io.DisplaySize.y - fontSize * lineCount) / 2.0f;
+
+    // Draws the text line by line
+    while (std::getline(stream, line)) {
+        ImVec2 lineSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, line.c_str());
+
+        // Centers each line of text
+        float textPosX = (io.DisplaySize.x - lineSize.x) / 2.0f;
+
+        // Draws the outline
+        float outlineThickness = 1.0f;
+        for (int x = -outlineThickness; x <= outlineThickness; ++x) {
+            for (int y = -outlineThickness; y <= outlineThickness; ++y) {
+                if (x != 0 || y != 0) {
+                    drawList->AddText(font, fontSize, ImVec2(textPosX + x, textPosY + y), outlineColor, line.c_str());
+                }
+            }
+        }
+
+        // Draws the line of text
+        drawList->AddText(font, fontSize, ImVec2(textPosX, textPosY), textColor, line.c_str());
+
+        // Moves to the next line
+        textPosY += fontSize;
+    }
+}
+
 void windowCloseCallback(GLFWwindow* window) {
     glfwDestroyWindow(window);
 }
@@ -100,6 +174,16 @@ int main() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     ImGui::StyleColorsDark();
+
+    // Load fonts
+    io.Fonts->AddFontDefault();
+    ImFont* myFont = io.Fonts->AddFontFromFileTTF("fonts/Poppins-Bold.ttf", 500);
+
+    if (!myFont) {
+        std::cerr << "Error while load font." << std::endl;
+    }
+
+    // Load implementations for ImGui
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
 
@@ -170,8 +254,11 @@ int main() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        // Draw center text
+        //TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", myFont);
+
         // Render image grid
-        ImGui::Begin("Images");
+        ImGui::Begin("Images", nullptr, ImGuiWindowFlags_NoDocking);
 
         float windowWidth = ImGui::GetContentRegionAvail().x;
         int imagesPerRow = std::max(1, static_cast<int>(windowWidth / 100.0f));
@@ -235,6 +322,12 @@ int main() {
         glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+        }
 
         glfwSwapBuffers(window);
     }
