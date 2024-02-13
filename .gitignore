@@ -40,6 +40,7 @@ CMakeLists.txt.user
 build/
 build-*/
 build_*/
+vendor
 
 # python
 *.egg-info
