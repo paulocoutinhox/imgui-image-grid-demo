@@ -174,6 +174,8 @@ int main() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     ImGui::StyleColorsDark();
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    io.IniFilename = nullptr;
 
     // Load fonts
     io.Fonts->AddFontDefault();
@@ -209,10 +211,15 @@ int main() {
 
     int videoWidth = 0;
     int videoHeight = 0;
+    int videoStartFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoFocusOnAppearing;
+
+    int monitorsCount;
 
     double fps = video.get(cv::CAP_PROP_FPS);
     auto frameDuration = std::chrono::milliseconds(static_cast<int>(1000 / fps));
-    std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();    
+
+    bool starting = true;
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -260,6 +267,13 @@ int main() {
         // Render image grid
         ImGui::Begin("Images", nullptr, ImGuiWindowFlags_NoDocking);
 
+        if (starting) {
+            ImVec2 winPos = ImVec2(ImGui::GetCursorPos().x + 50, ImGui::GetCursorPos().y + 50);
+
+            ImGui::SetWindowPos(winPos);
+            ImGui::SetWindowSize(ImVec2(400, 200));
+        }
+
         float windowWidth = ImGui::GetContentRegionAvail().x;
         int imagesPerRow = std::max(1, static_cast<int>(windowWidth / 100.0f));
         float imageSize = windowWidth / imagesPerRow;
@@ -278,9 +292,44 @@ int main() {
             glfwPollEvents();
         }
 
-        if (videoTexture != 0) {
-            ImGui::Begin("Video Player", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        int videoFlags = videoStartFlags;
+        ImVec2 videoWinPos;
+        ImVec2 videoWinSize;
+        GLFWmonitor** monitors = glfwGetMonitors(&monitorsCount);
 
+        if (starting) {
+            if (monitorsCount > 1) {
+                int monitorPosX, monitorPosY, monitorWidth, monitorHeight;
+                glfwGetMonitorWorkarea(monitors[1], &monitorPosX, &monitorPosY, &monitorWidth, &monitorHeight);
+
+                videoWinPos = ImVec2(monitorPosX, monitorPosY);
+                videoWinSize = ImVec2(monitorWidth, monitorHeight);
+
+                videoFlags = videoFlags | ImGuiWindowFlags_NoDecoration;
+            } else {
+                videoWinPos = ImVec2(ImGui::GetCursorPos().x + 50, ImGui::GetCursorPos().y + 300);
+                videoWinSize = ImVec2(400, 200);
+            }
+        } else {
+            if (monitorsCount > 1) {
+                int monitorPosX, monitorPosY, monitorWidth, monitorHeight;
+                glfwGetMonitorWorkarea(monitors[1], &monitorPosX, &monitorPosY, &monitorWidth, &monitorHeight);
+
+                videoWinPos = ImVec2(monitorPosX, monitorPosY);
+                videoWinSize = ImVec2(monitorWidth, monitorHeight);
+
+                videoFlags = videoFlags | ImGuiWindowFlags_NoDecoration;
+            } else {
+                videoWinPos = ImVec2(ImGui::GetCursorPos().x + 50, ImGui::GetCursorPos().y + 300);
+                videoWinSize = ImVec2(400, 200);
+            }
+        }
+
+        ImGui::Begin("Video Player", nullptr, videoFlags);
+        ImGui::SetWindowPos(videoWinPos);
+        ImGui::SetWindowSize(videoWinSize);
+
+        if (videoTexture != 0) {
             // Get total window dimensions from ImGui
             ImVec2 windowSize = ImGui::GetContentRegionAvail();
 
@@ -310,9 +359,9 @@ int main() {
 
             // Render video image with adjusted size and position
             ImGui::Image((void*)(intptr_t)videoTexture, imageSize);
-
-            ImGui::End();
         }
+
+        ImGui::End();
 
         // Render ImGui
         ImGui::Render();
@@ -330,6 +379,8 @@ int main() {
         }
 
         glfwSwapBuffers(window);
+
+        starting = false;
     }
 
     // Cleanup
