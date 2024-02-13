@@ -129,11 +129,9 @@ int main() {
     std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
 
     while (!glfwWindowShouldClose(window)) {
-        auto frameStartTime = std::chrono::high_resolution_clock::now(); // for video frame
-
-        glfwMakeContextCurrent(window);
         glfwPollEvents();
 
+        // Get video frame
         auto currentTime = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastFrameTime) >= frameDuration) {
             if (video.read(frame)) {
@@ -163,13 +161,15 @@ int main() {
             }
         }
 
-        // ImGui rendering
+        // Main window
+        glfwMakeContextCurrent(window);
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
         // Render image grid
         ImGui::Begin("Images");
+
         float windowWidth = ImGui::GetContentRegionAvail().x;
         int imagesPerRow = std::max(1, static_cast<int>(windowWidth / 100.0f));
         float imageSize = windowWidth / imagesPerRow;
@@ -179,6 +179,7 @@ int main() {
             ImGui::Image((void*)(intptr_t)textures[i].textureID, ImVec2(imageSize, imageSize / aspectRatio));
             if ((i + 1) % imagesPerRow != 0) ImGui::SameLine();
         }
+
         ImGui::End();
 
         // Render video        
