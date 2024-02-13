@@ -59,3 +59,7 @@ target_link_libraries(demo imgui glfw ${OPENGL_gl_LIBRARY} stb_image)
 
 file(COPY ${CMAKE_SOURCE_DIR}/images DESTINATION ${CMAKE_BINARY_DIR})
 
+# Command to copy images
+add_custom_command(TARGET demo POST_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_directory
+                   ${CMAKE_SOURCE_DIR}/images $<TARGET_FILE_DIR:demo>/images)
