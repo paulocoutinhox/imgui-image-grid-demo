@@ -69,6 +69,7 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
+    // Main window
     GLFWwindow* window = glfwCreateWindow(1024, 768, "Image Grid with ImGui", nullptr, nullptr);
     if (window == nullptr) {
         std::cerr << "Error creating GLFW window." << std::endl;
@@ -76,6 +77,10 @@ int main() {
         return -1;
     }
 
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1); // Enable vsync
+
+    // Video window
     GLFWwindow* videoWindow = nullptr;
 
     /*
@@ -88,10 +93,7 @@ int main() {
 
     glfwSetWindowCloseCallback(videoWindow, windowCloseCallback);
     glfwSetKeyCallback(videoWindow, windowKeyCallback);
-*/
-
-    glfwMakeContextCurrent(window);
-    glfwSwapInterval(1); // Enable vsync
+    */
 
     // ImGui initialization
     IMGUI_CHECKVERSION();
