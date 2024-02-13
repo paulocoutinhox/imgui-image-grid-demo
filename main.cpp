@@ -68,9 +68,10 @@ int main() {
 
     std::vector<ImageTexture> textures;
     std::string pathToImages = "images";
+
     for (const auto& entry : fs::directory_iterator(pathToImages)) {
         if (entry.is_regular_file()) {
-            textures.push_back(LoadTextureFromImage(entry.path().c_str()));
+            textures.push_back(LoadTextureFromImage(entry.path().string().c_str()));
         }
     }
 
