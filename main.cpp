@@ -408,12 +408,19 @@ int main() {
                     float paddingX = (cellSize.x - imageSize.x) / 2.0f;
                     float paddingY = (cellSize.y - imageSize.y) / 2.0f;
 
+                    // Calculate position for the cell's top-left corner
+                    ImVec2 cellPos = ImGui::GetCursorScreenPos();
+
                     // Adjust cursor position for padding and center the image
                     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + paddingX);
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + paddingY);
 
                     // Draw the image
                     ImGui::Image((void*)(intptr_t)textures[i].textureID, imageSize);
+
+                    // Draw rectangle around the cell
+                    ImDrawList* drawList = ImGui::GetWindowDrawList();
+                    drawList->AddRect(cellPos, ImVec2(cellPos.x + cellSize.x, cellPos.y + cellSize.y), IM_COL32(255, 255, 255, 255)); // Change the color if needed
 
                     // If it's not the end of the row, continue on the same line
                     if ((i + 1) % imagesPerRow != 0 && (i + 1) < textures.size()) {
@@ -427,6 +434,7 @@ int main() {
 
                 ImGui::EndTabItem();
             }
+
 
 
             ImGui::EndTabBar();
