@@ -199,7 +199,6 @@ int main() {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     ImGui::StyleColorsDark();
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-    io.BackendFlags |= ImGuiBackendFlags_HasMouseHoveredViewport;
     io.IniFilename = nullptr;
 
     // Load default font
