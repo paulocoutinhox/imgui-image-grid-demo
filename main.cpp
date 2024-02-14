@@ -240,7 +240,7 @@ int main() {
 
     double fps = video.get(cv::CAP_PROP_FPS);
     auto frameDuration = std::chrono::milliseconds(static_cast<int>(1000 / fps));
-    std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();    
+    std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
 
     bool starting = true;
 
@@ -287,8 +287,34 @@ int main() {
         // Draw center text
         //TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", myFont, true);
 
+        // Render tabs
+        if (ImGui::Begin("Control Panel")) {
+            if (starting) {
+                ImVec2 winPos = ImVec2(ImGui::GetCursorPos().x + 500, ImGui::GetCursorPos().y + 50);
+
+                ImGui::SetWindowPos(winPos);
+                ImGui::SetWindowSize(ImVec2(400, 200));
+            }
+
+            if (ImGui::BeginTabBar("TabBar")) {
+                if (ImGui::BeginTabItem("Tab 1")) {
+                    ImGui::Text("Tab 1");
+                    ImGui::EndTabItem();
+                }
+
+                if (ImGui::BeginTabItem("Tab 2")) {
+                    ImGui::Text("Tab 2");
+                    ImGui::EndTabItem();
+                }
+
+                ImGui::EndTabBar();
+            }
+        }
+
+        ImGui::End();
+
         // Render image grid
-        ImGui::Begin("Images", nullptr, ImGuiWindowFlags_NoDocking);
+        ImGui::Begin("Images");
 
         if (starting) {
             ImVec2 winPos = ImVec2(ImGui::GetCursorPos().x + 50, ImGui::GetCursorPos().y + 50);
@@ -309,7 +335,7 @@ int main() {
 
         ImGui::End();
 
-        // Render video        
+        // Render video
         if (videoWindow) {
             glfwMakeContextCurrent(videoWindow);
             glfwPollEvents();
