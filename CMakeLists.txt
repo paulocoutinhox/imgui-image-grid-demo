@@ -12,7 +12,7 @@ include(get_cpm.cmake)
 CPMAddPackage(
   NAME glfw
   GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG 3.3.9
+  GIT_TAG master
   OPTIONS
     "GLFW_BUILD_DOCS OFF"
     "GLFW_BUILD_TESTS OFF"
