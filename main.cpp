@@ -42,16 +42,40 @@ ImageTexture LoadTextureFromImage(const char* imagePath) {
     return imgTexture;
 }
 
-void TextAutoSizedAndCentered(const std::string& text, ImFont* font) {
+void TextAutoSizedAndCentered(const std::string& text, ImFont* font, bool useDisplaySize) {
     ImGuiIO& io = ImGui::GetIO();
 
     // Define padding
     float paddingX = 20.0f; // Horizontal padding
     float paddingY = 20.0f; // Vertical padding
 
+    ImVec2 baseSize; // Initialize base size
+    ImVec2 basePos; // Initialize base position
+
+    if (useDisplaySize) {
+        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+            // When viewports are enabled, use the main viewport's size and position
+            ImGuiViewport* mainViewport = ImGui::GetMainViewport();
+            baseSize = mainViewport->Size;
+            basePos = mainViewport->Pos;
+        } else {
+            // If viewports are not enabled, use the display size and position (0, 0)
+            baseSize = io.DisplaySize;
+            basePos = ImVec2(0, 0);
+        }
+    } else {
+        // When not using display size, use the current window's size and position
+        baseSize = ImGui::GetWindowSize();
+        basePos = ImGui::GetWindowPos();
+    }
+
+    // Ensure there's a minimum size for drawing text
+    baseSize.x = std::max(baseSize.x, 1.0f); // Minimum width
+    baseSize.y = std::max(baseSize.y, 1.0f); // Minimum height
+
     // Calculates available area considering padding
-    float availableWidth = io.DisplaySize.x - 2 * paddingX;
-    float availableHeight = io.DisplaySize.y - 2 * paddingY;
+    float availableWidth = baseSize.x - 2 * paddingX;
+    float availableHeight = baseSize.y - 2 * paddingY;
 
     // Finds the required width for the text and the number of lines
     float maxLineWidth = 0.0f;
@@ -72,7 +96,6 @@ void TextAutoSizedAndCentered(const std::string& text, ImFont* font) {
 
     // Ensures the text block fits vertically within the available height
     float totalTextHeight = fontSize * lineCount;
-
     if (totalTextHeight > availableHeight) {
         fontSize *= availableHeight / totalTextHeight;
     }
@@ -89,14 +112,14 @@ void TextAutoSizedAndCentered(const std::string& text, ImFont* font) {
     stream.seekg(0, std::ios::beg);
 
     // Calculates the starting y position to center the text block vertically
-    float textPosY = (io.DisplaySize.y - fontSize * lineCount) / 2.0f;
+    float textPosY = basePos.y + paddingY + (availableHeight - fontSize * lineCount) / 2.0f;
 
     // Draws the text line by line
     while (std::getline(stream, line)) {
         ImVec2 lineSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, line.c_str());
 
         // Centers each line of text
-        float textPosX = (io.DisplaySize.x - lineSize.x) / 2.0f;
+        float textPosX = basePos.x + paddingX + (availableWidth - lineSize.x) / 2.0f;
 
         // Draws the outline
         float outlineThickness = 1.0f;
@@ -174,7 +197,7 @@ int main() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     ImGui::StyleColorsDark();
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     io.IniFilename = nullptr;
 
     // Load fonts
@@ -262,7 +285,7 @@ int main() {
         ImGui::NewFrame();
 
         // Draw center text
-        //TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", myFont);
+        //TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", myFont, true);
 
         // Render image grid
         ImGui::Begin("Images", nullptr, ImGuiWindowFlags_NoDocking);
@@ -298,7 +321,7 @@ int main() {
         GLFWmonitor** monitors = glfwGetMonitors(&monitorsCount);
 
         if (starting) {
-            if (monitorsCount > 1) {
+            if (monitorsCount > 1 && io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
                 int monitorPosX, monitorPosY, monitorWidth, monitorHeight;
                 glfwGetMonitorWorkarea(monitors[1], &monitorPosX, &monitorPosY, &monitorWidth, &monitorHeight);
 
@@ -311,7 +334,7 @@ int main() {
                 videoWinSize = ImVec2(400, 200);
             }
         } else {
-            if (monitorsCount > 1) {
+            if (monitorsCount > 1 && io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
                 int monitorPosX, monitorPosY, monitorWidth, monitorHeight;
                 glfwGetMonitorWorkarea(monitors[1], &monitorPosX, &monitorPosY, &monitorWidth, &monitorHeight);
 
@@ -328,6 +351,8 @@ int main() {
         ImGui::Begin("Video Player", nullptr, videoFlags);
         ImGui::SetWindowPos(videoWinPos);
         ImGui::SetWindowSize(videoWinSize);
+
+        TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", myFont, false);
 
         if (videoTexture != 0) {
             // Get total window dimensions from ImGui
