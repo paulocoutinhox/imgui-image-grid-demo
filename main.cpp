@@ -1,6 +1,7 @@
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
+#include "misc/freetype/imgui_freetype.h"
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <vector>
@@ -197,14 +198,40 @@ int main() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     ImGui::StyleColorsDark();
-    //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    io.BackendFlags |= ImGuiBackendFlags_HasMouseHoveredViewport;
     io.IniFilename = nullptr;
 
-    // Load fonts
+    // Load default font
     io.Fonts->AddFontDefault();
-    ImFont* myFont = io.Fonts->AddFontFromFileTTF("fonts/Poppins-Bold.ttf", 500);
 
-    if (!myFont) {
+    // Font config
+    ImFontConfig fontConfig;
+    fontConfig.OversampleH = 2;
+    fontConfig.OversampleV = 2;
+    fontConfig.RasterizerMultiply = 1.0f;
+    fontConfig.FontBuilderFlags |= ImGuiFreeTypeBuilderFlags_Monochrome;
+    fontConfig.FontBuilderFlags |= ImGuiFreeTypeBuilderFlags_MonoHinting;
+
+    ImFontConfig fontConfigBold = fontConfig;
+    fontConfigBold.FontBuilderFlags |= ImGuiFreeTypeBuilderFlags_Bold;
+
+    // Load fonts
+    ImFont* fontMain = io.Fonts->AddFontFromFileTTF("fonts/OpenSans-Regular.ttf", 18, &fontConfig, io.Fonts->GetGlyphRangesDefault());
+
+    if (!fontMain) {
+        std::cerr << "Error while load font." << std::endl;
+    }
+
+    ImFont* fontMainTitle = io.Fonts->AddFontFromFileTTF("fonts/OpenSans-Bold.ttf", 18, &fontConfigBold, io.Fonts->GetGlyphRangesDefault());
+
+    if (!fontMainTitle) {
+        std::cerr << "Error while load font." << std::endl;
+    }
+
+    ImFont* fontPlayerText = io.Fonts->AddFontFromFileTTF("fonts/Poppins-Bold.ttf", 500, &fontConfig, io.Fonts->GetGlyphRangesDefault());
+
+    if (!fontPlayerText) {
         std::cerr << "Error while load font." << std::endl;
     }
 
@@ -285,55 +312,130 @@ int main() {
         ImGui::NewFrame();
 
         // Draw center text
-        //TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", myFont, true);
+        //TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", fontPlayerText, true);
 
         // Render tabs
-        if (ImGui::Begin("Control Panel")) {
-            if (starting) {
-                ImVec2 winPos = ImVec2(ImGui::GetCursorPos().x + 500, ImGui::GetCursorPos().y + 50);
+        ImGui::PushFont(fontMain);
 
-                ImGui::SetWindowPos(winPos);
-                ImGui::SetWindowSize(ImVec2(400, 200));
-            }
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-            if (ImGui::BeginTabBar("TabBar")) {
-                if (ImGui::BeginTabItem("Tab 1")) {
-                    ImGui::Text("Tab 1");
-                    ImGui::EndTabItem();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        ImGui::SetNextWindowViewport(viewport->ID);
+
+        ImGui::Begin("Control Panel", nullptr, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus);
+
+        if (ImGui::BeginTabBar("TabBar")) {
+            if (ImGui::BeginTabItem("Settings")) {
+                // Project Folder Section
+                ImGui::Dummy(ImVec2(0, 4));
+
+                ImGui::PushFont(fontMainTitle);
+                ImGui::Text("PROJECT FOLDER");
+                ImGui::PopFont();
+
+                static char folderPathBuffer[256];
+                ImGui::InputText("", folderPathBuffer, IM_ARRAYSIZE(folderPathBuffer), ImGuiInputTextFlags_ReadOnly);
+
+                ImGui::SameLine();
+
+                if (ImGui::Button("Select Folder")) {
+                    // Implement logic to open the folder selection dialog
                 }
 
-                if (ImGui::BeginTabItem("Tab 2")) {
-                    ImGui::Text("Tab 2");
-                    ImGui::EndTabItem();
+                ImGui::Text("Hint: Select the folder where your project is located");
+
+                ImGui::Dummy(ImVec2(0, 10));
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0, 10));
+
+                // Projector Controls Section
+                ImGui::PushFont(fontMainTitle);
+                ImGui::Text("PROJECTOR CONTROLS");
+                ImGui::PopFont();
+
+                if (ImGui::Button("Close Projector")) {
+                    // Implement logic to close the projector
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Black Screen")) {
+                    // Implement logic to set the screen to black
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Default Screen")) {
+                    // Implement logic to set the screen to default
                 }
 
-                ImGui::EndTabBar();
+                ImGui::Dummy(ImVec2(0, 10));
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0, 10));
+
+                // Text Settings Section
+                ImGui::PushFont(fontMainTitle);
+                ImGui::Text("TEXT SETTINGS");
+                ImGui::PopFont();
+
+                static ImVec4 textColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                ImGui::ColorEdit4("Text Color", (float*)&textColor, ImGuiColorEditFlags_NoInputs);
+
+                static ImVec4 outlineColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+                ImGui::ColorEdit4("Outline Color", (float*)&outlineColor, ImGuiColorEditFlags_NoInputs);
+
+                ImGui::EndTabItem();
             }
+
+            if (ImGui::BeginTabItem("Images")) {
+                const ImVec2 cellSize(120.0f, 80.0f); // Fixed size for cells
+                float windowWidth = ImGui::GetContentRegionAvail().x;
+                const float paddingBetweenImages = 8.0f; // Define padding between images
+
+                // Calculate the total width used by each image, including padding
+                float totalCellWidth = cellSize.x + paddingBetweenImages;
+
+                // Adjust calculation for imagesPerRow to include padding, subtracting 1 padding since there's no padding after the last image in a row
+                int imagesPerRow = static_cast<int>((windowWidth + paddingBetweenImages) / totalCellWidth);
+
+                for (int i = 0; i < textures.size(); ++i) {
+                    // If it's not the first image and reached the end of the row, start a new row
+                    if (i > 0 && i % imagesPerRow == 0) {
+                        ImGui::NewLine();
+                    }
+
+                    // Calculate the aspect ratio and size of the image to fit in the cell
+                    float aspectRatio = static_cast<float>(textures[i].width) / textures[i].height;
+                    ImVec2 imageSize = (aspectRatio > 1.0f) ? ImVec2(cellSize.x, cellSize.x / aspectRatio) : ImVec2(cellSize.y * aspectRatio, cellSize.y);
+
+                    // Calculate padding to center the image in the cell
+                    float paddingX = (cellSize.x - imageSize.x) / 2.0f;
+                    float paddingY = (cellSize.y - imageSize.y) / 2.0f;
+
+                    // Adjust cursor position for padding and center the image
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + paddingX);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + paddingY);
+
+                    // Draw the image
+                    ImGui::Image((void*)(intptr_t)textures[i].textureID, imageSize);
+
+                    // If it's not the end of the row, continue on the same line
+                    if ((i + 1) % imagesPerRow != 0 && (i + 1) < textures.size()) {
+                        ImGui::SameLine();
+
+                        // Reset cursor position to the left edge and prepare for the next image or row
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + paddingX);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - paddingY);
+                    }
+                }
+
+                ImGui::EndTabItem();
+            }
+
+
+            ImGui::EndTabBar();
         }
 
         ImGui::End();
 
         // Render image grid
-        ImGui::Begin("Images");
-
-        if (starting) {
-            ImVec2 winPos = ImVec2(ImGui::GetCursorPos().x + 50, ImGui::GetCursorPos().y + 50);
-
-            ImGui::SetWindowPos(winPos);
-            ImGui::SetWindowSize(ImVec2(400, 200));
-        }
-
-        float windowWidth = ImGui::GetContentRegionAvail().x;
-        int imagesPerRow = std::max(1, static_cast<int>(windowWidth / 100.0f));
-        float imageSize = windowWidth / imagesPerRow;
-
-        for (int i = 0; i < textures.size(); ++i) {
-            float aspectRatio = static_cast<float>(textures[i].width) / textures[i].height;
-            ImGui::Image((void*)(intptr_t)textures[i].textureID, ImVec2(imageSize, imageSize / aspectRatio));
-            if ((i + 1) % imagesPerRow != 0) ImGui::SameLine();
-        }
-
-        ImGui::End();
 
         // Render video
         if (videoWindow) {
@@ -378,7 +480,7 @@ int main() {
         ImGui::SetWindowPos(videoWinPos);
         ImGui::SetWindowSize(videoWinSize);
 
-        TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", myFont, false);
+        TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", fontPlayerText, false);
 
         if (videoTexture != 0) {
             // Get total window dimensions from ImGui
@@ -413,6 +515,9 @@ int main() {
         }
 
         ImGui::End();
+
+        // Finish
+        ImGui::PopFont();
 
         // Render ImGui
         ImGui::Render();
