@@ -420,7 +420,7 @@ int main() {
 
                     // Draw rectangle around the cell
                     ImDrawList* drawList = ImGui::GetWindowDrawList();
-                    drawList->AddRect(cellPos, ImVec2(cellPos.x + cellSize.x, cellPos.y + cellSize.y), IM_COL32(255, 255, 255, 255)); // Change the color if needed
+                    drawList->AddRect(cellPos, ImVec2(cellPos.x + cellSize.x, cellPos.y + cellSize.y), IM_COL32(255, 255, 255, 255));
 
                     // If it's not the end of the row, continue on the same line
                     if ((i + 1) % imagesPerRow != 0 && (i + 1) < textures.size()) {
