@@ -124,6 +124,9 @@ target_link_libraries(demo PUBLIC ${OpenCV_LIBS})
 # Link com poco
 target_link_libraries(demo PUBLIC Poco::Foundation Poco::Net Poco::Util)
 
+# vendor
+include_directories(${CMAKE_SOURCE_DIR}/vendor)
+
 # Command to copy images
 add_custom_command(TARGET demo POST_BUILD
                    COMMAND ${CMAKE_COMMAND} -E copy_directory

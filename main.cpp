@@ -21,6 +21,9 @@ struct ImageTexture
     int width, height;
 };
 
+// dialog
+#include "portable-file-dialogs/portable-file-dialogs.h"
+
 // HTTP
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/HTTPServer.h>
@@ -542,15 +545,26 @@ int main()
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
 
+    // Load settings
+    std::string selectedProjectPath = "";
+
     // Load images from directory
     std::vector<ImageTexture> textures;
-    std::string pathToImages = "images";
+    std::string pathToImages;
 
-    for (const auto &entry : fs::directory_iterator(pathToImages))
+    if (!selectedProjectPath.empty())
     {
-        if (entry.is_regular_file())
+        selectedProjectPath = selectedProjectPath + "/images";
+    }
+
+    if (fs::is_directory(pathToImages))
+    {
+        for (const auto &entry : fs::directory_iterator(pathToImages))
         {
-            textures.push_back(LoadTextureFromImage(entry.path().string().c_str()));
+            if (entry.is_regular_file())
+            {
+                textures.push_back(LoadTextureFromImage(entry.path().string().c_str()));
+            }
         }
     }
 
@@ -665,7 +679,31 @@ int main()
 
                 if (ImGui::Button("Select Folder"))
                 {
-                    // Implement logic to open the folder selection dialog
+                    auto selectedFolder = pfd::select_folder("Select Project Folder", ".").result();
+
+                    if (!selectedFolder.empty())
+                    {
+                        strncpy(folderPathBuffer, selectedFolder.c_str(), sizeof(folderPathBuffer));
+                    }
+
+                    selectedProjectPath = selectedFolder;
+
+                    // Limpa a lista de texturas existentes
+                    textures.clear();
+                    // Define o novo caminho para as imagens
+                    pathToImages = selectedProjectPath + "/images";
+
+                    // Recarrega as texturas
+                    if (fs::is_directory(pathToImages))
+                    {
+                        for (const auto &entry : fs::directory_iterator(pathToImages))
+                        {
+                            if (entry.is_regular_file())
+                            {
+                                textures.push_back(LoadTextureFromImage(entry.path().string().c_str()));
+                            }
+                        }
+                    }
                 }
 
                 ImGui::Text("Hint: Select the folder where your project is located");
@@ -766,54 +804,63 @@ int main()
 
             if (ImGui::BeginTabItem("Images"))
             {
-                const ImVec2 cellSize(120.0f, 80.0f); // Fixed size for cells
-                float windowWidth = ImGui::GetContentRegionAvail().x;
-                const float paddingBetweenImages = 8.0f; // Define padding between images
-
-                // Calculate the total width used by each image, including padding
-                float totalCellWidth = cellSize.x + paddingBetweenImages;
-
-                // Adjust calculation for imagesPerRow to include padding, subtracting 1 padding since there's no padding after the last image in a row
-                int imagesPerRow = static_cast<int>((windowWidth + paddingBetweenImages) / totalCellWidth);
-
-                for (int i = 0; i < textures.size(); ++i)
+                if (textures.empty())
                 {
-                    // If it's not the first image and reached the end of the row, start a new row
-                    if (i > 0 && i % imagesPerRow == 0)
+                    ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("No project selected").x) * 0.5f);
+                    ImGui::SetCursorPosY((ImGui::GetContentRegionAvail().y - ImGui::CalcTextSize("No project selected").y) * 0.5f);
+                    ImGui::Text("No images inside project folder");
+                }
+                else
+                {
+                    const ImVec2 cellSize(120.0f, 80.0f); // Fixed size for cells
+                    float windowWidth = ImGui::GetContentRegionAvail().x;
+                    const float paddingBetweenImages = 8.0f; // Define padding between images
+
+                    // Calculate the total width used by each image, including padding
+                    float totalCellWidth = cellSize.x + paddingBetweenImages;
+
+                    // Adjust calculation for imagesPerRow to include padding, subtracting 1 padding since there's no padding after the last image in a row
+                    int imagesPerRow = static_cast<int>((windowWidth + paddingBetweenImages) / totalCellWidth);
+
+                    for (int i = 0; i < textures.size(); ++i)
                     {
-                        ImGui::NewLine();
-                    }
+                        // If it's not the first image and reached the end of the row, start a new row
+                        if (i > 0 && i % imagesPerRow == 0)
+                        {
+                            ImGui::NewLine();
+                        }
 
-                    // Calculate the aspect ratio and size of the image to fit in the cell
-                    float aspectRatio = static_cast<float>(textures[i].width) / textures[i].height;
-                    ImVec2 imageSize = (aspectRatio > 1.0f) ? ImVec2(cellSize.x, cellSize.x / aspectRatio) : ImVec2(cellSize.y * aspectRatio, cellSize.y);
+                        // Calculate the aspect ratio and size of the image to fit in the cell
+                        float aspectRatio = static_cast<float>(textures[i].width) / textures[i].height;
+                        ImVec2 imageSize = (aspectRatio > 1.0f) ? ImVec2(cellSize.x, cellSize.x / aspectRatio) : ImVec2(cellSize.y * aspectRatio, cellSize.y);
 
-                    // Calculate padding to center the image in the cell
-                    float paddingX = (cellSize.x - imageSize.x) / 2.0f;
-                    float paddingY = (cellSize.y - imageSize.y) / 2.0f;
+                        // Calculate padding to center the image in the cell
+                        float paddingX = (cellSize.x - imageSize.x) / 2.0f;
+                        float paddingY = (cellSize.y - imageSize.y) / 2.0f;
 
-                    // Calculate position for the cell's top-left corner
-                    ImVec2 cellPos = ImGui::GetCursorScreenPos();
+                        // Calculate position for the cell's top-left corner
+                        ImVec2 cellPos = ImGui::GetCursorScreenPos();
 
-                    // Adjust cursor position for padding and center the image
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + paddingX);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + paddingY);
-
-                    // Draw the image
-                    ImGui::Image((void *)(intptr_t)textures[i].textureID, imageSize);
-
-                    // Draw rectangle around the cell
-                    ImDrawList *drawList = ImGui::GetWindowDrawList();
-                    drawList->AddRect(cellPos, ImVec2(cellPos.x + cellSize.x, cellPos.y + cellSize.y), IM_COL32(255, 255, 255, 255));
-
-                    // If it's not the end of the row, continue on the same line
-                    if ((i + 1) % imagesPerRow != 0 && (i + 1) < textures.size())
-                    {
-                        ImGui::SameLine();
-
-                        // Reset cursor position to the left edge and prepare for the next image or row
+                        // Adjust cursor position for padding and center the image
                         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + paddingX);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - paddingY);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + paddingY);
+
+                        // Draw the image
+                        ImGui::Image((void *)(intptr_t)textures[i].textureID, imageSize);
+
+                        // Draw rectangle around the cell
+                        ImDrawList *drawList = ImGui::GetWindowDrawList();
+                        drawList->AddRect(cellPos, ImVec2(cellPos.x + cellSize.x, cellPos.y + cellSize.y), IM_COL32(255, 255, 255, 255));
+
+                        // If it's not the end of the row, continue on the same line
+                        if ((i + 1) % imagesPerRow != 0 && (i + 1) < textures.size())
+                        {
+                            ImGui::SameLine();
+
+                            // Reset cursor position to the left edge and prepare for the next image or row
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + paddingX);
+                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - paddingY);
+                        }
                     }
                 }
 
