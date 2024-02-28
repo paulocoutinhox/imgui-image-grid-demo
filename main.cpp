@@ -11,20 +11,300 @@
 #include "stb_image.h"
 
 #include <opencv2/opencv.hpp>
+#include <opencv2/objdetect.hpp>
 
 namespace fs = std::filesystem;
 
-struct ImageTexture {
+struct ImageTexture
+{
     GLuint textureID;
     int width, height;
 };
 
+// HTTP
+#include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/HTTPServer.h>
+#include <Poco/Net/HTTPRequestHandler.h>
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Util/ServerApplication.h>
+#include <Poco/Net/NetworkInterface.h>
+#include <Poco/URI.h>
+#include <Poco/Path.h>
+#include <Poco/File.h>
+#include <fstream>
+
+using namespace Poco::Net;
+using namespace Poco::Util;
+using namespace std;
+
+class FileRequestHandler : public HTTPRequestHandler
+{
+public:
+    void handleRequest(HTTPServerRequest &req, HTTPServerResponse &resp) override
+    {
+        // Exemplo: http://localhost:8080/rcontrol/?api_url=http://localhost:8080/api
+
+        // O diretório base onde os arquivos estão localizados
+        const std::string basePath = "./web"; // Assegura que aponta para a pasta 'web' no diretório atual
+
+        // Extrai o caminho do URI da solicitação e forma o caminho do arquivo
+        std::string requestedPath = req.getURI();
+
+        // Remove os parâmetros de consulta (tudo após '?')
+        size_t queryStart = requestedPath.find('?');
+        if (queryStart != std::string::npos)
+        {
+            requestedPath = requestedPath.substr(0, queryStart);
+        }
+
+        // Prevenção simples contra Directory Traversal Attack
+        if (requestedPath.find("..") != std::string::npos)
+        {
+            resp.setStatus(HTTPResponse::HTTP_FORBIDDEN);
+            resp.send() << "403 - Forbidden";
+            return;
+        }
+
+        if (requestedPath.back() == '/')
+        {
+            requestedPath += "index.html";
+        }
+        else if (requestedPath == "/")
+        { // Se nenhum caminho for especificado, usar '/index.html'
+            requestedPath = "/index.html";
+        }
+
+        // Constrói o caminho final do arquivo solicitado
+        std::string fullPath = basePath + requestedPath;
+
+        Poco::File file(fullPath);
+
+        if (file.exists())
+        {
+            if (file.isDirectory())
+            {
+                fullPath = Poco::Path(fullPath).append("index.html").toString();
+                file = Poco::File(fullPath);
+            }
+        }
+
+        if (file.exists() && file.isFile())
+        {
+            // Determina o tipo de conteúdo baseado na extensão do arquivo
+            std::string contentType = "text/plain"; // Default content type
+            if (fullPath.find(".html") != std::string::npos)
+            {
+                contentType = "text/html";
+            }
+            else if (fullPath.find(".js") != std::string::npos)
+            {
+                contentType = "application/javascript";
+            }
+            else if (fullPath.find(".css") != std::string::npos)
+            {
+                contentType = "text/css";
+            }
+            else if (fullPath.find(".png") != std::string::npos)
+            {
+                contentType = "image/png";
+            }
+            else if (fullPath.find(".jpg") != std::string::npos || fullPath.find(".jpeg") != std::string::npos)
+            {
+                contentType = "image/jpeg";
+            }
+
+            // Lê e envia o arquivo
+            std::ifstream fileStream(fullPath, std::ifstream::binary);
+            std::ostringstream ss;
+            ss << fileStream.rdbuf(); // Lê todo o conteúdo do arquivo
+            std::string content = ss.str();
+
+            resp.setStatus(HTTPResponse::HTTP_OK);
+            resp.setContentType(contentType);
+            std::ostream &out = resp.send();
+            out << content;
+        }
+        else
+        {
+            // Arquivo não encontrado
+            resp.setStatus(HTTPResponse::HTTP_NOT_FOUND);
+            resp.send() << "404 - Not Found";
+        }
+    }
+};
+
+class APIRequestHandler : public HTTPRequestHandler
+{
+public:
+    void handleRequest(HTTPServerRequest &req, HTTPServerResponse &resp) override
+    {
+        resp.setStatus(HTTPResponse::HTTP_OK);
+        resp.setContentType("application/json");
+
+        ostream &out = resp.send();
+        out << R"({"message": "This is a JSON response from API"})";
+        out.flush();
+    }
+};
+
+class RequestHandlerFactory : public HTTPRequestHandlerFactory
+{
+public:
+    HTTPRequestHandler *createRequestHandler(const HTTPServerRequest &request) override
+    {
+        Poco::URI uri(request.getURI());
+        if (uri.getPath().find("/api") == 0)
+        {
+            return new APIRequestHandler;
+        }
+        else
+        {
+            return new FileRequestHandler;
+        }
+    }
+};
+
+class WebServerApp : public ServerApplication
+{
+protected:
+    int main(const vector<string> &) override
+    {
+        HTTPServer s(new RequestHandlerFactory, ServerSocket(8080), new HTTPServerParams);
+
+        s.start();
+        cout << "Server started" << endl;
+
+        waitForTerminationRequest(); // wait for CTRL-C or kill
+
+        cout << "Shutting down..." << endl;
+        s.stop();
+
+        return Application::EXIT_OK;
+    }
+};
+
+class WebServer
+{
+public:
+    bool serverRunning;
+    HTTPServer *server;
+
+    WebServer() : server(nullptr) {}
+
+    void start(int port)
+    {
+        if (serverRunning)
+            return; // Impede iniciar múltiplas vezes
+        try
+        {
+            server = new HTTPServer(new RequestHandlerFactory, ServerSocket(port), new HTTPServerParams);
+            server->start();
+            std::cout << "Server started on port " << port << "." << std::endl;
+            serverRunning = true;
+        }
+        catch (Poco::Exception &e)
+        {
+            std::cerr << "Error: " << e.displayText() << std::endl;
+        }
+    }
+
+    void stop()
+    {
+        if (!serverRunning)
+            return; // Impede parar se não estiver rodando
+        try
+        {
+            if (server)
+            {
+                server->stop();
+                delete server;
+                server = nullptr;
+                std::cout << "Server stopped." << std::endl;
+                serverRunning = false;
+            }
+        }
+        catch (Poco::Exception &e)
+        {
+            std::cerr << "Error: " << e.displayText() << std::endl;
+        }
+    }
+
+    std::string getLocalIPAddress()
+    {
+        // Obtém todas as interfaces de rede
+        Poco::Net::NetworkInterface::Map map = Poco::Net::NetworkInterface::map();
+        std::string localIP = "127.0.0.1"; // Endereço padrão caso não encontre uma interface externa
+
+        for (const auto &m : map)
+        {
+            // Procura por uma interface de rede IPv4 que não seja loopback (127.0.0.1) e esteja ativa
+            if (!m.second.isLoopback() && m.second.supportsIPv4())
+            {
+                const auto &ips = m.second.addressList();
+                for (const auto &ipa : ips)
+                {
+                    if (ipa.get<0>().family() == Poco::Net::AddressFamily::IPv4)
+                    {
+                        localIP = ipa.get<0>().toString();
+                        // Retorna o primeiro endereço IP não-loopback encontrado
+                        return localIP;
+                    }
+                }
+            }
+        }
+
+        // Retorna o endereço loopback caso não encontre um endereço externo
+        return localIP;
+    }
+};
+
+// Function to generate QRCode
+GLuint generateQRCodeTexture(const std::string &data)
+{
+    cv::QRCodeEncoder::Params params;
+    params.mode = cv::QRCodeEncoder::EncodeMode::MODE_BYTE; // Modo de codificação do QR Code
+    cv::Ptr<cv::QRCodeEncoder> encoder = cv::QRCodeEncoder::create(params);
+
+    std::vector<cv::Mat> qrcodes;
+
+    // Gera o QR Code
+    encoder->encodeStructuredAppend(data, qrcodes);
+    if (qrcodes.empty())
+        return 0; // Verifica se a geração foi bem-sucedida
+
+    // Considerando apenas o primeiro QR Code para a textura
+    cv::Mat qrCode = qrcodes.front();
+
+    // Redimensiona o QR Code para uma resolução mais alta
+    cv::Mat qrCodeHighRes;
+    int newSize = 1024; // Nova dimensão quadrada para a imagem
+    cv::resize(qrCode, qrCodeHighRes, cv::Size(newSize, newSize), 0, 0, cv::INTER_NEAREST);
+
+    // Converte para RGBA
+    cv::Mat qrCodeRGBA;
+    cvtColor(qrCodeHighRes, qrCodeRGBA, cv::COLOR_BGR2RGBA);
+
+    // Gera uma textura OpenGL a partir da imagem RGBA
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, qrCodeRGBA.cols, qrCodeRGBA.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, qrCodeRGBA.data);
+
+    return textureID;
+}
+
 // Function to load texture from image
-ImageTexture LoadTextureFromImage(const char* imagePath) {
+ImageTexture LoadTextureFromImage(const char *imagePath)
+{
     ImageTexture imgTexture = {0, 0, 0};
     int width, height, channels;
-    unsigned char* data = stbi_load(imagePath, &width, &height, &channels, 0);
-    if (data == nullptr) {
+    unsigned char *data = stbi_load(imagePath, &width, &height, &channels, 0);
+    if (data == nullptr)
+    {
         std::cerr << "Error loading image: " << imagePath << std::endl;
         return imgTexture;
     }
@@ -43,28 +323,35 @@ ImageTexture LoadTextureFromImage(const char* imagePath) {
     return imgTexture;
 }
 
-void TextAutoSizedAndCentered(const std::string& text, ImFont* font, bool useDisplaySize) {
-    ImGuiIO& io = ImGui::GetIO();
+void TextAutoSizedAndCentered(const std::string &text, ImFont *font, bool useDisplaySize)
+{
+    ImGuiIO &io = ImGui::GetIO();
 
     // Define padding
     float paddingX = 20.0f; // Horizontal padding
     float paddingY = 20.0f; // Vertical padding
 
     ImVec2 baseSize; // Initialize base size
-    ImVec2 basePos; // Initialize base position
+    ImVec2 basePos;  // Initialize base position
 
-    if (useDisplaySize) {
-        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+    if (useDisplaySize)
+    {
+        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
             // When viewports are enabled, use the main viewport's size and position
-            ImGuiViewport* mainViewport = ImGui::GetMainViewport();
+            ImGuiViewport *mainViewport = ImGui::GetMainViewport();
             baseSize = mainViewport->Size;
             basePos = mainViewport->Pos;
-        } else {
+        }
+        else
+        {
             // If viewports are not enabled, use the display size and position (0, 0)
             baseSize = io.DisplaySize;
             basePos = ImVec2(0, 0);
         }
-    } else {
+    }
+    else
+    {
         // When not using display size, use the current window's size and position
         baseSize = ImGui::GetWindowSize();
         basePos = ImGui::GetWindowPos();
@@ -83,9 +370,11 @@ void TextAutoSizedAndCentered(const std::string& text, ImFont* font, bool useDis
     int lineCount = 0;
     std::istringstream stream(text);
     std::string line;
-    while (std::getline(stream, line)) {
+    while (std::getline(stream, line))
+    {
         ImVec2 lineSize = font->CalcTextSizeA(font->FontSize, FLT_MAX, 0.0f, line.c_str());
-        if (lineSize.x > maxLineWidth) {
+        if (lineSize.x > maxLineWidth)
+        {
             maxLineWidth = lineSize.x;
         }
         lineCount++;
@@ -97,12 +386,13 @@ void TextAutoSizedAndCentered(const std::string& text, ImFont* font, bool useDis
 
     // Ensures the text block fits vertically within the available height
     float totalTextHeight = fontSize * lineCount;
-    if (totalTextHeight > availableHeight) {
+    if (totalTextHeight > availableHeight)
+    {
         fontSize *= availableHeight / totalTextHeight;
     }
 
     // Prepares to draw the text
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImDrawList *drawList = ImGui::GetForegroundDrawList();
 
     // Text and outline colors
     ImU32 textColor = IM_COL32(255, 255, 255, 255);
@@ -116,7 +406,8 @@ void TextAutoSizedAndCentered(const std::string& text, ImFont* font, bool useDis
     float textPosY = basePos.y + paddingY + (availableHeight - fontSize * lineCount) / 2.0f;
 
     // Draws the text line by line
-    while (std::getline(stream, line)) {
+    while (std::getline(stream, line))
+    {
         ImVec2 lineSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, line.c_str());
 
         // Centers each line of text
@@ -124,9 +415,12 @@ void TextAutoSizedAndCentered(const std::string& text, ImFont* font, bool useDis
 
         // Draws the outline
         float outlineThickness = 1.0f;
-        for (int x = -outlineThickness; x <= outlineThickness; ++x) {
-            for (int y = -outlineThickness; y <= outlineThickness; ++y) {
-                if (x != 0 || y != 0) {
+        for (int x = -outlineThickness; x <= outlineThickness; ++x)
+        {
+            for (int y = -outlineThickness; y <= outlineThickness; ++y)
+            {
+                if (x != 0 || y != 0)
+                {
                     drawList->AddText(font, fontSize, ImVec2(textPosX + x, textPosY + y), outlineColor, line.c_str());
                 }
             }
@@ -140,21 +434,26 @@ void TextAutoSizedAndCentered(const std::string& text, ImFont* font, bool useDis
     }
 }
 
-void windowCloseCallback(GLFWwindow* window) {
+void windowCloseCallback(GLFWwindow *window)
+{
     glfwDestroyWindow(window);
 }
 
-void windowKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+void windowKeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+{
     auto altF4 = (key == GLFW_KEY_W && mods == GLFW_MOD_SUPER);
     auto commandQ = (key == GLFW_KEY_F4 && mods == GLFW_MOD_ALT && action == GLFW_PRESS);
 
-    if (altF4 || commandQ) {
+    if (altF4 || commandQ)
+    {
         glfwDestroyWindow(window);
     }
 }
 
-int main() {
-    if (!glfwInit()) {
+int main()
+{
+    if (!glfwInit())
+    {
         std::cerr << "Error initializing GLFW." << std::endl;
         return -1;
     }
@@ -168,8 +467,9 @@ int main() {
 #endif
 
     // Main window
-    GLFWwindow* window = glfwCreateWindow(1024, 768, "Image Grid with ImGui", nullptr, nullptr);
-    if (window == nullptr) {
+    GLFWwindow *window = glfwCreateWindow(1024, 768, "Image Grid with ImGui", nullptr, nullptr);
+    if (window == nullptr)
+    {
         std::cerr << "Error creating GLFW window." << std::endl;
         glfwTerminate();
         return -1;
@@ -179,7 +479,7 @@ int main() {
     glfwSwapInterval(1); // Enable vsync
 
     // Video window
-    GLFWwindow* videoWindow = nullptr;
+    GLFWwindow *videoWindow = nullptr;
 
     /*
     GLFWwindow* videoWindow = glfwCreateWindow(1024, 768, "Video Player", nullptr, nullptr);
@@ -196,7 +496,8 @@ int main() {
     // ImGui initialization
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO &io = ImGui::GetIO();
+    (void)io;
     ImGui::StyleColorsDark();
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     io.IniFilename = nullptr;
@@ -216,21 +517,24 @@ int main() {
     fontConfigBold.FontBuilderFlags |= ImGuiFreeTypeBuilderFlags_Bold;
 
     // Load fonts
-    ImFont* fontMain = io.Fonts->AddFontFromFileTTF("fonts/OpenSans-Regular.ttf", 18, &fontConfig, io.Fonts->GetGlyphRangesDefault());
+    ImFont *fontMain = io.Fonts->AddFontFromFileTTF("fonts/OpenSans-Regular.ttf", 18, &fontConfig, io.Fonts->GetGlyphRangesDefault());
 
-    if (!fontMain) {
+    if (!fontMain)
+    {
         std::cerr << "Error while load font." << std::endl;
     }
 
-    ImFont* fontMainTitle = io.Fonts->AddFontFromFileTTF("fonts/OpenSans-Bold.ttf", 18, &fontConfigBold, io.Fonts->GetGlyphRangesDefault());
+    ImFont *fontMainTitle = io.Fonts->AddFontFromFileTTF("fonts/OpenSans-Bold.ttf", 18, &fontConfigBold, io.Fonts->GetGlyphRangesDefault());
 
-    if (!fontMainTitle) {
+    if (!fontMainTitle)
+    {
         std::cerr << "Error while load font." << std::endl;
     }
 
-    ImFont* fontPlayerText = io.Fonts->AddFontFromFileTTF("fonts/Poppins-Bold.ttf", 500, &fontConfig, io.Fonts->GetGlyphRangesDefault());
+    ImFont *fontPlayerText = io.Fonts->AddFontFromFileTTF("fonts/Poppins-Bold.ttf", 500, &fontConfig, io.Fonts->GetGlyphRangesDefault());
 
-    if (!fontPlayerText) {
+    if (!fontPlayerText)
+    {
         std::cerr << "Error while load font." << std::endl;
     }
 
@@ -242,15 +546,18 @@ int main() {
     std::vector<ImageTexture> textures;
     std::string pathToImages = "images";
 
-    for (const auto& entry : fs::directory_iterator(pathToImages)) {
-        if (entry.is_regular_file()) {
+    for (const auto &entry : fs::directory_iterator(pathToImages))
+    {
+        if (entry.is_regular_file())
+        {
             textures.push_back(LoadTextureFromImage(entry.path().string().c_str()));
         }
     }
 
     // Open video file
     cv::VideoCapture video("videos/video1.mp4");
-    if (!video.isOpened()) {
+    if (!video.isOpened())
+    {
         std::cerr << "Error opening video." << std::endl;
         return -1;
     }
@@ -270,19 +577,32 @@ int main() {
 
     bool starting = true;
 
-    while (!glfwWindowShouldClose(window)) {
+    // server
+    WebServer webServer;
+
+    int serverPort = 8080;
+    char serverPortInput[6] = "8080";
+
+    GLuint qrCodeTexture = 0; // ID da textura OpenGL para o QR Code
+    std::string lastUrl;      // Última URL usada para gerar o QR Code
+
+    while (!glfwWindowShouldClose(window))
+    {
         glfwPollEvents();
 
         // Get video frame
         auto currentTime = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastFrameTime) >= frameDuration) {
-            if (video.read(frame)) {
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastFrameTime) >= frameDuration)
+        {
+            if (video.read(frame))
+            {
                 // Convert BGR to RGBA
                 cv::Mat frameRGBA;
                 cv::cvtColor(frame, frameRGBA, cv::COLOR_BGR2RGBA);
 
                 // Update video texture
-                if (videoTexture == 0) {
+                if (videoTexture == 0)
+                {
                     glGenTextures(1, &videoTexture);
                     glBindTexture(GL_TEXTURE_2D, videoTexture);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -292,13 +612,16 @@ int main() {
                 glBindTexture(GL_TEXTURE_2D, videoTexture);
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frameRGBA.cols, frameRGBA.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, frameRGBA.data);
 
-                if (videoWidth == 0 || videoHeight == 0) {
+                if (videoWidth == 0 || videoHeight == 0)
+                {
                     videoWidth = frame.cols;
                     videoHeight = frame.rows;
                 }
 
                 lastFrameTime = currentTime;
-            } else {
+            }
+            else
+            {
                 // Restart video playback when reaching the end
                 video.set(cv::CAP_PROP_POS_FRAMES, 0);
             }
@@ -311,12 +634,12 @@ int main() {
         ImGui::NewFrame();
 
         // Draw center text
-        //TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", fontPlayerText, true);
+        // TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", fontPlayerText, true);
 
         // Render tabs
         ImGui::PushFont(fontMain);
 
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGuiViewport *viewport = ImGui::GetMainViewport();
 
         ImGui::SetNextWindowPos(viewport->Pos);
         ImGui::SetNextWindowSize(viewport->Size);
@@ -324,8 +647,10 @@ int main() {
 
         ImGui::Begin("Control Panel", nullptr, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus);
 
-        if (ImGui::BeginTabBar("TabBar")) {
-            if (ImGui::BeginTabItem("Settings")) {
+        if (ImGui::BeginTabBar("TabBar"))
+        {
+            if (ImGui::BeginTabItem("Settings"))
+            {
                 // Project Folder Section
                 ImGui::Dummy(ImVec2(0, 4));
 
@@ -338,7 +663,8 @@ int main() {
 
                 ImGui::SameLine();
 
-                if (ImGui::Button("Select Folder")) {
+                if (ImGui::Button("Select Folder"))
+                {
                     // Implement logic to open the folder selection dialog
                 }
 
@@ -353,15 +679,18 @@ int main() {
                 ImGui::Text("PROJECTOR CONTROLS");
                 ImGui::PopFont();
 
-                if (ImGui::Button("Close Projector")) {
+                if (ImGui::Button("Close Projector"))
+                {
                     // Implement logic to close the projector
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Black Screen")) {
+                if (ImGui::Button("Black Screen"))
+                {
                     // Implement logic to set the screen to black
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Default Screen")) {
+                if (ImGui::Button("Default Screen"))
+                {
                     // Implement logic to set the screen to default
                 }
 
@@ -375,15 +704,68 @@ int main() {
                 ImGui::PopFont();
 
                 static ImVec4 textColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-                ImGui::ColorEdit4("Text Color", (float*)&textColor, ImGuiColorEditFlags_NoInputs);
+                ImGui::ColorEdit4("Text Color", (float *)&textColor, ImGuiColorEditFlags_NoInputs);
 
                 static ImVec4 outlineColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-                ImGui::ColorEdit4("Outline Color", (float*)&outlineColor, ImGuiColorEditFlags_NoInputs);
+                ImGui::ColorEdit4("Outline Color", (float *)&outlineColor, ImGuiColorEditFlags_NoInputs);
+
+                ImGui::Dummy(ImVec2(0, 10));
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0, 10));
+
+                // Controle de porta do servidor
+                ImGui::PushFont(fontMainTitle);
+                ImGui::Text("REMOTE CONTROL SETTINGS");
+                ImGui::PopFont();
+
+                ImGui::InputText("Server Port", serverPortInput, IM_ARRAYSIZE(serverPortInput));
+
+                if (webServer.serverRunning)
+                {
+                    if (ImGui::Button("Stop Server"))
+                    {
+                        webServer.stop();
+                    }
+
+                    // Gera o QR Code apenas se a porta do servidor mudou
+                    std::string currentUrl = "http://" + webServer.getLocalIPAddress() + ":" + std::string(serverPortInput) + "/rcontrol/?api_url=http://" + webServer.getLocalIPAddress() + ":" + std::string(serverPortInput) + "/api";
+                    if (currentUrl != lastUrl)
+                    {
+                        // Se já tiver uma textura de QR Code, deleta a antiga
+                        if (qrCodeTexture != 0)
+                        {
+                            glDeleteTextures(1, &qrCodeTexture);
+                            qrCodeTexture = 0;
+                        }
+
+                        // Gera a nova textura de QR Code
+                        qrCodeTexture = generateQRCodeTexture(currentUrl);
+                        lastUrl = currentUrl;
+                    }
+
+                    // Exibe o QR Code se estiver disponível
+                    if (qrCodeTexture != 0)
+                    {
+                        ImGui::Dummy(ImVec2(0, 10));
+
+                        ImGui::Text("QR Code:");
+                        ImGui::Image((void *)(intptr_t)qrCodeTexture, ImVec2(200, 200)); // Exibe o QR Code com tamanho 200x200
+                    }
+                }
+                else
+                {
+                    if (ImGui::Button("Start Server"))
+                    {
+                        serverPort = std::atoi(serverPortInput);
+                        webServer.start(serverPort);
+                    }
+                }
 
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Images")) {
+            if (ImGui::BeginTabItem("Images"))
+            {
                 const ImVec2 cellSize(120.0f, 80.0f); // Fixed size for cells
                 float windowWidth = ImGui::GetContentRegionAvail().x;
                 const float paddingBetweenImages = 8.0f; // Define padding between images
@@ -394,9 +776,11 @@ int main() {
                 // Adjust calculation for imagesPerRow to include padding, subtracting 1 padding since there's no padding after the last image in a row
                 int imagesPerRow = static_cast<int>((windowWidth + paddingBetweenImages) / totalCellWidth);
 
-                for (int i = 0; i < textures.size(); ++i) {
+                for (int i = 0; i < textures.size(); ++i)
+                {
                     // If it's not the first image and reached the end of the row, start a new row
-                    if (i > 0 && i % imagesPerRow == 0) {
+                    if (i > 0 && i % imagesPerRow == 0)
+                    {
                         ImGui::NewLine();
                     }
 
@@ -416,14 +800,15 @@ int main() {
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + paddingY);
 
                     // Draw the image
-                    ImGui::Image((void*)(intptr_t)textures[i].textureID, imageSize);
+                    ImGui::Image((void *)(intptr_t)textures[i].textureID, imageSize);
 
                     // Draw rectangle around the cell
-                    ImDrawList* drawList = ImGui::GetWindowDrawList();
+                    ImDrawList *drawList = ImGui::GetWindowDrawList();
                     drawList->AddRect(cellPos, ImVec2(cellPos.x + cellSize.x, cellPos.y + cellSize.y), IM_COL32(255, 255, 255, 255));
 
                     // If it's not the end of the row, continue on the same line
-                    if ((i + 1) % imagesPerRow != 0 && (i + 1) < textures.size()) {
+                    if ((i + 1) % imagesPerRow != 0 && (i + 1) < textures.size())
+                    {
                         ImGui::SameLine();
 
                         // Reset cursor position to the left edge and prepare for the next image or row
@@ -435,8 +820,6 @@ int main() {
                 ImGui::EndTabItem();
             }
 
-
-
             ImGui::EndTabBar();
         }
 
@@ -445,7 +828,8 @@ int main() {
         // Render image grid
 
         // Render video
-        if (videoWindow) {
+        if (videoWindow)
+        {
             glfwMakeContextCurrent(videoWindow);
             glfwPollEvents();
         }
@@ -453,10 +837,12 @@ int main() {
         int videoFlags = videoStartFlags;
         ImVec2 videoWinPos;
         ImVec2 videoWinSize;
-        GLFWmonitor** monitors = glfwGetMonitors(&monitorsCount);
+        GLFWmonitor **monitors = glfwGetMonitors(&monitorsCount);
 
-        if (starting) {
-            if (monitorsCount > 1 && io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        if (starting)
+        {
+            if (monitorsCount > 1 && io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+            {
                 int monitorPosX, monitorPosY, monitorWidth, monitorHeight;
                 glfwGetMonitorWorkarea(monitors[1], &monitorPosX, &monitorPosY, &monitorWidth, &monitorHeight);
 
@@ -464,12 +850,17 @@ int main() {
                 videoWinSize = ImVec2(monitorWidth, monitorHeight);
 
                 videoFlags = videoFlags | ImGuiWindowFlags_NoDecoration;
-            } else {
+            }
+            else
+            {
                 videoWinPos = ImVec2(ImGui::GetCursorPos().x + 50, ImGui::GetCursorPos().y + 300);
                 videoWinSize = ImVec2(400, 200);
             }
-        } else {
-            if (monitorsCount > 1 && io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        }
+        else
+        {
+            if (monitorsCount > 1 && io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+            {
                 int monitorPosX, monitorPosY, monitorWidth, monitorHeight;
                 glfwGetMonitorWorkarea(monitors[1], &monitorPosX, &monitorPosY, &monitorWidth, &monitorHeight);
 
@@ -477,7 +868,9 @@ int main() {
                 videoWinSize = ImVec2(monitorWidth, monitorHeight);
 
                 videoFlags = videoFlags | ImGuiWindowFlags_NoDecoration;
-            } else {
+            }
+            else
+            {
                 videoWinPos = ImVec2(ImGui::GetCursorPos().x + 50, ImGui::GetCursorPos().y + 300);
                 videoWinSize = ImVec2(400, 200);
             }
@@ -489,7 +882,8 @@ int main() {
 
         TextAutoSizedAndCentered("DEUS ENVIOU\nSEU FILHO AMADO\nPRA PERDOAR\nPRA ME SALVAR", fontPlayerText, false);
 
-        if (videoTexture != 0) {
+        if (videoTexture != 0)
+        {
             // Get total window dimensions from ImGui
             ImVec2 windowSize = ImGui::GetContentRegionAvail();
 
@@ -498,11 +892,14 @@ int main() {
 
             // Calculate image size based on video and window aspect ratio
             ImVec2 imageSize;
-            if (windowSize.x / windowSize.y > videoAspectRatio) {
+            if (windowSize.x / windowSize.y > videoAspectRatio)
+            {
                 // Window is wider than video
                 imageSize.x = windowSize.y * videoAspectRatio;
                 imageSize.y = windowSize.y;
-            } else {
+            }
+            else
+            {
                 // Window is taller than video
                 imageSize.x = windowSize.x;
                 imageSize.y = windowSize.x / videoAspectRatio;
@@ -512,13 +909,13 @@ int main() {
             ImVec2 imagePos = ImVec2(
                 ImGui::GetCursorPos().x + (windowSize.x - imageSize.x) * 0.5f, // X position for centering
                 ImGui::GetCursorPos().y + (windowSize.y - imageSize.y) * 0.5f  // Y position for centering
-                );
+            );
 
             // Apply calculated position
             ImGui::SetCursorPos(imagePos);
 
             // Render video image with adjusted size and position
-            ImGui::Image((void*)(intptr_t)videoTexture, imageSize);
+            ImGui::Image((void *)(intptr_t)videoTexture, imageSize);
         }
 
         ImGui::End();
@@ -546,12 +943,17 @@ int main() {
         starting = false;
     }
 
+    // stop server
+    webServer.stop();
+
     // Cleanup
-    if (videoTexture != 0) {
+    if (videoTexture != 0)
+    {
         glDeleteTextures(1, &videoTexture);
     }
 
-    for (auto& texture : textures) {
+    for (auto &texture : textures)
+    {
         glDeleteTextures(1, &texture.textureID);
     }
 
@@ -559,7 +961,8 @@ int main() {
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
-    if (videoWindow) {
+    if (videoWindow)
+    {
         glfwDestroyWindow(videoWindow);
     }
 

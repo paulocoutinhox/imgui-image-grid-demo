@@ -8,6 +8,37 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(get_cpm.cmake)
 
+# poco
+CPMAddPackage(
+    NAME Poco
+    GITHUB_REPOSITORY pocoproject/poco
+    GIT_TAG poco-1.13.2
+    OPTIONS
+        "BUILD_SHARED_LIBS NO"
+        "POCO_UNBUNDLED OFF"
+        "ENABLE_TESTS OFF"
+        "ENABLE_NET ON"
+        "ENABLE_NETSSL OFF"
+        "ENABLE_XML OFF"
+        "ENABLE_MONGODB OFF"
+        "ENABLE_DATA_SQLITE OFF"
+        "ENABLE_REDIS OFF"
+        "ENABLE_PROMETHEUS OFF"
+        "ENABLE_PDF OFF"
+        "ENABLE_SEVENZIP OFF"
+        "ENABLE_ZIP OFF"
+        "ENABLE_CPPPARSER OFF"
+        "ENABLE_POCODOC OFF"
+        "ENABLE_PAGECOMPILER OFF"
+        "ENABLE_PAGECOMPILER_FILE2PAGE OFF"
+        "ENABLE_ACTIVERECORD OFF"
+        "ENABLE_ACTIVERECORD_COMPILER OFF"
+        "ENABLE_DATA OFF"
+        "ENABLE_JWT OFF"
+        "ENABLE_UTIL ON"
+        "ENABLE_APACHECONNECTOR OFF"
+)
+
 # GLFW
 CPMAddPackage(
   NAME glfw
@@ -34,6 +65,26 @@ CPMAddPackage(
   GIT_TAG master
   DOWNLOAD_ONLY YES
 )
+
+# libzip
+# CPMAddPackage(
+#   NAME libzip
+#   GIT_REPOSITORY https://github.com/nih-at/libzip.git
+#   GIT_TAG "v1.10.1"
+#   OPTIONS
+#     "ENABLE_COMMONCRYPTO OFF"
+#     "ENABLE_GNUTLS OFF"
+#     "ENABLE_MBEDTLS ON"
+#     "ENABLE_OPENSSL OFF"
+#     "ENABLE_WINDOWS_CRYPTO OFF"
+#     "BUILD_TOOLS OFF"
+#     "BUILD_REGRESS OFF"
+#     "BUILD_OSSFUZZ OFF"
+#     "BUILD_EXAMPLES OFF"
+#     "BUILD_DOC OFF"
+#     "BUILD_SHARED_LIBS OFF"
+#     "LIBZIP_DO_INSTALL OFF"
+# )
 
 # opencv
 find_package(OpenCV REQUIRED)
@@ -67,6 +118,12 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 # Link com o OpenCV
 target_link_libraries(demo PUBLIC ${OpenCV_LIBS})
 
+# Link com zip
+#target_link_libraries(demo PUBLIC libzip::zip)
+
+# Link com poco
+target_link_libraries(demo PUBLIC Poco::Foundation Poco::Net Poco::Util)
+
 # Command to copy images
 add_custom_command(TARGET demo POST_BUILD
                    COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -81,3 +138,8 @@ add_custom_command(TARGET demo POST_BUILD
 add_custom_command(TARGET demo POST_BUILD
                    COMMAND ${CMAKE_COMMAND} -E copy_directory
                    ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:demo>/fonts)
+
+# Command to copy web
+add_custom_command(TARGET demo POST_BUILD
+                  COMMAND ${CMAKE_COMMAND} -E copy_directory
+                  ${CMAKE_SOURCE_DIR}/web $<TARGET_FILE_DIR:demo>/web)
