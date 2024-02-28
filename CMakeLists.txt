@@ -66,6 +66,9 @@ CPMAddPackage(
   DOWNLOAD_ONLY YES
 )
 
+# json
+CPMAddPackage("gh:nlohmann/json@3.11.3")
+
 # libzip
 # CPMAddPackage(
 #   NAME libzip
@@ -123,6 +126,9 @@ target_link_libraries(demo PUBLIC ${OpenCV_LIBS})
 
 # Link com poco
 target_link_libraries(demo PUBLIC Poco::Foundation Poco::Net Poco::Util)
+
+# Link com json
+target_link_libraries(demo PUBLIC nlohmann_json::nlohmann_json)
 
 # vendor
 include_directories(${CMAKE_SOURCE_DIR}/vendor)

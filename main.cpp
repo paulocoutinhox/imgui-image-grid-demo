@@ -24,6 +24,10 @@ struct ImageTexture
 // dialog
 #include "portable-file-dialogs/portable-file-dialogs.h"
 
+// json
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 // HTTP
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/HTTPServer.h>
@@ -262,6 +266,51 @@ public:
         return localIP;
     }
 };
+
+// Função para carregar as configurações
+void loadSettings(std::string &projectPath, int &port)
+{
+    // Define o caminho do arquivo de configuração
+    std::string configPath = "config.json";
+    std::ifstream configFile(configPath);
+
+    // Verifica se o arquivo existe
+    if (configFile.is_open())
+    {
+        json j;
+        configFile >> j;
+
+        // Carrega a pasta do projeto e a porta do arquivo JSON
+        projectPath = j["projectPath"];
+        port = j.value("port", 8080);
+
+        configFile.close();
+    }
+    else
+    {
+        // Valores padrão caso o arquivo de configuração não exista
+        projectPath = "";
+        port = 8080;
+    }
+}
+
+// Função para salvar as configurações
+void saveSettings(const std::string &projectPath, int port)
+{
+    // Define o caminho do arquivo de configuração
+    std::string configPath = "config.json";
+    std::ofstream configFile(configPath);
+
+    // Cria um objeto JSON e armazena a pasta do projeto e a porta
+    json j;
+    j["projectPath"] = projectPath;
+    j["port"] = port;
+
+    // Salva no arquivo
+    configFile << j.dump(4); // Indentação de 4 espaços para melhor leitura
+
+    configFile.close();
+}
 
 // Function to generate QRCode
 GLuint generateQRCodeTexture(const std::string &data)
@@ -546,7 +595,10 @@ int main()
     ImGui_ImplOpenGL3_Init();
 
     // Load settings
-    std::string selectedProjectPath = "";
+    std::string selectedProjectPath;
+    int serverPort;
+
+    loadSettings(selectedProjectPath, serverPort);
 
     // Load images from directory
     std::vector<ImageTexture> textures;
@@ -554,7 +606,7 @@ int main()
 
     if (!selectedProjectPath.empty())
     {
-        selectedProjectPath = selectedProjectPath + "/images";
+        pathToImages = selectedProjectPath + "/images";
     }
 
     if (fs::is_directory(pathToImages))
@@ -582,6 +634,10 @@ int main()
     int videoWidth = 0;
     int videoHeight = 0;
     int videoStartFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoFocusOnAppearing;
+    bool isVideoPlaying = true;
+
+    GLuint selectedImageTexture = 0;
+    int selectedImageWidth = 0, selectedImageHeight = 0;
 
     int monitorsCount;
 
@@ -594,9 +650,6 @@ int main()
     // server
     WebServer webServer;
 
-    int serverPort = 8080;
-    char serverPortInput[6] = "8080";
-
     GLuint qrCodeTexture = 0; // ID da textura OpenGL para o QR Code
     std::string lastUrl;      // Última URL usada para gerar o QR Code
 
@@ -606,38 +659,41 @@ int main()
 
         // Get video frame
         auto currentTime = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastFrameTime) >= frameDuration)
+        if (isVideoPlaying)
         {
-            if (video.read(frame))
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastFrameTime) >= frameDuration)
             {
-                // Convert BGR to RGBA
-                cv::Mat frameRGBA;
-                cv::cvtColor(frame, frameRGBA, cv::COLOR_BGR2RGBA);
-
-                // Update video texture
-                if (videoTexture == 0)
+                if (video.read(frame))
                 {
-                    glGenTextures(1, &videoTexture);
+                    // Convert BGR to RGBA
+                    cv::Mat frameRGBA;
+                    cv::cvtColor(frame, frameRGBA, cv::COLOR_BGR2RGBA);
+
+                    // Update video texture
+                    if (videoTexture == 0)
+                    {
+                        glGenTextures(1, &videoTexture);
+                        glBindTexture(GL_TEXTURE_2D, videoTexture);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    }
+
                     glBindTexture(GL_TEXTURE_2D, videoTexture);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frameRGBA.cols, frameRGBA.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, frameRGBA.data);
+
+                    if (videoWidth == 0 || videoHeight == 0)
+                    {
+                        videoWidth = frame.cols;
+                        videoHeight = frame.rows;
+                    }
+
+                    lastFrameTime = currentTime;
                 }
-
-                glBindTexture(GL_TEXTURE_2D, videoTexture);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frameRGBA.cols, frameRGBA.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, frameRGBA.data);
-
-                if (videoWidth == 0 || videoHeight == 0)
+                else
                 {
-                    videoWidth = frame.cols;
-                    videoHeight = frame.rows;
+                    // Restart video playback when reaching the end
+                    video.set(cv::CAP_PROP_POS_FRAMES, 0);
                 }
-
-                lastFrameTime = currentTime;
-            }
-            else
-            {
-                // Restart video playback when reaching the end
-                video.set(cv::CAP_PROP_POS_FRAMES, 0);
             }
         }
 
@@ -672,8 +728,7 @@ int main()
                 ImGui::Text("PROJECT FOLDER");
                 ImGui::PopFont();
 
-                static char folderPathBuffer[256];
-                ImGui::InputText("", folderPathBuffer, IM_ARRAYSIZE(folderPathBuffer), ImGuiInputTextFlags_ReadOnly);
+                ImGui::InputText("", selectedProjectPath.data(), selectedProjectPath.size(), ImGuiInputTextFlags_ReadOnly);
 
                 ImGui::SameLine();
 
@@ -683,24 +738,23 @@ int main()
 
                     if (!selectedFolder.empty())
                     {
-                        strncpy(folderPathBuffer, selectedFolder.c_str(), sizeof(folderPathBuffer));
-                    }
+                        // strncpy(folderPathBuffer, selectedFolder.c_str(), sizeof(folderPathBuffer));
+                        selectedProjectPath = selectedFolder;
 
-                    selectedProjectPath = selectedFolder;
+                        // Limpa a lista de texturas existentes
+                        textures.clear();
+                        // Define o novo caminho para as imagens
+                        pathToImages = selectedProjectPath + "/images";
 
-                    // Limpa a lista de texturas existentes
-                    textures.clear();
-                    // Define o novo caminho para as imagens
-                    pathToImages = selectedProjectPath + "/images";
-
-                    // Recarrega as texturas
-                    if (fs::is_directory(pathToImages))
-                    {
-                        for (const auto &entry : fs::directory_iterator(pathToImages))
+                        // Recarrega as texturas
+                        if (fs::is_directory(pathToImages))
                         {
-                            if (entry.is_regular_file())
+                            for (const auto &entry : fs::directory_iterator(pathToImages))
                             {
-                                textures.push_back(LoadTextureFromImage(entry.path().string().c_str()));
+                                if (entry.is_regular_file())
+                                {
+                                    textures.push_back(LoadTextureFromImage(entry.path().string().c_str()));
+                                }
                             }
                         }
                     }
@@ -756,7 +810,7 @@ int main()
                 ImGui::Text("REMOTE CONTROL SETTINGS");
                 ImGui::PopFont();
 
-                ImGui::InputText("Server Port", serverPortInput, IM_ARRAYSIZE(serverPortInput));
+                ImGui::InputInt("Server Port", &serverPort);
 
                 if (webServer.serverRunning)
                 {
@@ -766,7 +820,7 @@ int main()
                     }
 
                     // Gera o QR Code apenas se a porta do servidor mudou
-                    std::string currentUrl = "http://" + webServer.getLocalIPAddress() + ":" + std::string(serverPortInput) + "/rcontrol/?api_url=http://" + webServer.getLocalIPAddress() + ":" + std::string(serverPortInput) + "/api";
+                    std::string currentUrl = "http://" + webServer.getLocalIPAddress() + ":" + std::to_string(serverPort) + "/rcontrol/?api_url=http://" + webServer.getLocalIPAddress() + ":" + std::to_string(serverPort) + "/api";
                     if (currentUrl != lastUrl)
                     {
                         // Se já tiver uma textura de QR Code, deleta a antiga
@@ -794,7 +848,6 @@ int main()
                 {
                     if (ImGui::Button("Start Server"))
                     {
-                        serverPort = std::atoi(serverPortInput);
                         webServer.start(serverPort);
                     }
                 }
@@ -847,6 +900,16 @@ int main()
 
                         // Draw the image
                         ImGui::Image((void *)(intptr_t)textures[i].textureID, imageSize);
+
+                        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                        {
+                            // Assume que esta é a condição para selecionar uma imagem após o clique duplo
+                            isVideoPlaying = false;                       // Para a reprodução do vídeo
+                            videoTexture = 0;                             // Reseta a textura do vídeo se necessário
+                            selectedImageTexture = textures[i].textureID; // Atualiza a textura selecionada
+                            selectedImageWidth = textures[i].width;       // Atualiza a largura da imagem selecionada
+                            selectedImageHeight = textures[i].height;     // Atualiza a altura da imagem selecionada
+                        }
 
                         // Draw rectangle around the cell
                         ImDrawList *drawList = ImGui::GetWindowDrawList();
@@ -964,6 +1027,40 @@ int main()
             // Render video image with adjusted size and position
             ImGui::Image((void *)(intptr_t)videoTexture, imageSize);
         }
+        else if (selectedImageTexture != 0)
+        {
+            ImVec2 windowSize = ImGui::GetContentRegionAvail(); // Tamanho disponível na janela
+
+            // Presumindo que você tem acesso às dimensões originais da imagem
+            float imageAspectRatio = static_cast<float>(selectedImageWidth) / selectedImageHeight;
+            float windowAspectRatio = windowSize.x / windowSize.y;
+
+            ImVec2 imageSize;
+            ImVec2 imagePos;
+
+            if (imageAspectRatio > windowAspectRatio)
+            {
+                // Imagem é mais larga que a área disponível
+                imageSize.x = windowSize.y * imageAspectRatio;    // Ajusta a largura baseado na altura da janela
+                imageSize.y = windowSize.y;                       // Altura preenche a janela
+                imagePos.x = (windowSize.x - imageSize.x) * 0.5f; // Centraliza horizontalmente
+                imagePos.y = 0;                                   // Começa do topo da janela
+            }
+            else
+            {
+                // Imagem é mais alta que a área disponível
+                imageSize.x = windowSize.x;                       // Largura preenche a janela
+                imageSize.y = windowSize.x / imageAspectRatio;    // Ajusta a altura baseado na largura da janela
+                imagePos.x = 0;                                   // Começa da lateral esquerda da janela
+                imagePos.y = (windowSize.y - imageSize.y) * 0.5f; // Centraliza verticalmente
+            }
+
+            // Aplica a posição calculada
+            ImGui::SetCursorPos(imagePos);
+
+            // Renderiza a imagem com o tamanho e posição ajustados
+            ImGui::Image((void *)(intptr_t)selectedImageTexture, imageSize);
+        }
 
         ImGui::End();
 
@@ -990,6 +1087,9 @@ int main()
         starting = false;
     }
 
+    // Antes de fechar o servidor e terminar a aplicação
+    saveSettings(selectedProjectPath, serverPort);
+
     // stop server
     webServer.stop();
 
@@ -1002,6 +1102,11 @@ int main()
     for (auto &texture : textures)
     {
         glDeleteTextures(1, &texture.textureID);
+    }
+
+    if (selectedImageTexture != 0)
+    {
+        glDeleteTextures(1, &selectedImageTexture);
     }
 
     ImGui_ImplOpenGL3_Shutdown();
