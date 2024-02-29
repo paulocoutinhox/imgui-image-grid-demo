@@ -184,15 +184,29 @@ public:
 
     WebServer() : server(nullptr) {}
 
-    void start(int port)
+    void start(const std::string &host, int port)
     {
+        if (host.empty())
+        {
+            return;
+        }
+
+        if (port <= 0)
+        {
+            return;
+        }
+
         if (serverRunning)
+        {
             return; // Impede iniciar múltiplas vezes
+        }
+
         try
         {
-            server = new HTTPServer(new RequestHandlerFactory, ServerSocket(port), new HTTPServerParams);
+            Poco::Net::SocketAddress sa(host, port);
+            server = new HTTPServer(new RequestHandlerFactory, ServerSocket(sa), new HTTPServerParams);
             server->start();
-            std::cout << "Server started on port " << port << "." << std::endl;
+            std::cout << "Server started on " << host << ":" << port << "." << std::endl;
             serverRunning = true;
         }
         catch (Poco::Exception &e)
@@ -252,6 +266,36 @@ public:
 
         // Retorna o endereço loopback caso não encontre um endereço externo válido
         return localIP;
+    }
+
+    std::vector<std::string> getAvailableIPAddresses()
+    {
+        std::vector<std::string> ipAddresses;
+        Poco::Net::NetworkInterface::Map map = Poco::Net::NetworkInterface::map();
+        for (const auto &m : map)
+        {
+            if (!m.second.isLoopback() && m.second.supportsIPv4() && m.second.isUp())
+            {
+                const auto &ips = m.second.addressList();
+                for (const auto &ipa : ips)
+                {
+                    if (ipa.get<0>().family() == Poco::Net::AddressFamily::IPv4)
+                    {
+                        Poco::Net::IPAddress ip = ipa.get<0>();
+                        if (!ip.isLoopback() && ip.isUnicast())
+                        {
+                            ipAddresses.push_back(ip.toString());
+                        }
+                    }
+                }
+            }
+        }
+        // Inclui o loopback caso não encontre endereços externos
+        if (ipAddresses.empty())
+        {
+            ipAddresses.push_back("127.0.0.1");
+        }
+        return ipAddresses;
     }
 };
 
@@ -793,10 +837,33 @@ int main()
                 ImGui::Separator();
                 ImGui::Dummy(ImVec2(0, 10));
 
-                // Controle de porta do servidor
+                // Controle de host e porta do servidor
                 ImGui::PushFont(fontMainTitle);
                 ImGui::Text("REMOTE CONTROL SETTINGS");
                 ImGui::PopFont();
+
+                std::vector<std::string> ipAddresses = webServer.getAvailableIPAddresses();
+                static int selectedIPIndex = 0;
+
+                if (ImGui::BeginCombo("IP Address", ipAddresses[selectedIPIndex].c_str()))
+                {
+                    for (int i = 0; i < ipAddresses.size(); i++)
+                    {
+                        const bool isSelected = (selectedIPIndex == i);
+                        if (ImGui::Selectable(ipAddresses[i].c_str(), isSelected))
+                        {
+                            selectedIPIndex = i;
+                        }
+
+                        // Define o item inicialmente selecionado para ser mostrado
+                        if (isSelected)
+                        {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+
+                    ImGui::EndCombo();
+                }
 
                 ImGui::InputInt("Server Port", &serverPort);
 
@@ -836,7 +903,7 @@ int main()
                 {
                     if (ImGui::Button("Start Server"))
                     {
-                        webServer.start(serverPort);
+                        webServer.start(ipAddresses[selectedIPIndex], serverPort);
                     }
                 }
 
