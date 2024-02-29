@@ -875,7 +875,7 @@ int main()
                     }
 
                     // Gera o QR Code apenas se a porta do servidor mudou
-                    std::string currentUrl = "http://" + webServer.getLocalIPAddress() + ":" + std::to_string(serverPort) + "/rcontrol/?api_url=http://" + webServer.getLocalIPAddress() + ":" + std::to_string(serverPort) + "/api";
+                    std::string currentUrl = "http://" + ipAddresses[selectedIPIndex] + ":" + std::to_string(serverPort) + "/rcontrol/?api_url=http://" + ipAddresses[selectedIPIndex] + ":" + std::to_string(serverPort) + "/api";
                     if (currentUrl != lastUrl)
                     {
                         // Se já tiver uma textura de QR Code, deleta a antiga
