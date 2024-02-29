@@ -413,8 +413,8 @@ void TextAutoSizedAndCentered(const std::string &text, ImFont *font, bool useDis
     }
 
     // Ensure there's a minimum size for drawing text
-    baseSize.x = std::max(baseSize.x, 1.0f); // Minimum width
-    baseSize.y = std::max(baseSize.y, 1.0f); // Minimum height
+    baseSize.x = (std::max)(baseSize.x, 1.0f); // Minimum width
+    baseSize.y = (std::max)(baseSize.y, 1.0f); // Minimum height
 
     // Calculates available area considering padding
     float availableWidth = baseSize.x - 2 * paddingX;
