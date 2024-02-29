@@ -179,8 +179,8 @@ public:
 class WebServer
 {
 public:
-    bool serverRunning;
-    HTTPServer *server;
+    bool serverRunning = false;
+    HTTPServer *server = nullptr;
 
     WebServer() : server(nullptr) {}
 
