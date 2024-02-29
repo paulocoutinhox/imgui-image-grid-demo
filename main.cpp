@@ -176,25 +176,6 @@ public:
     }
 };
 
-class WebServerApp : public ServerApplication
-{
-protected:
-    int main(const vector<string> &) override
-    {
-        HTTPServer s(new RequestHandlerFactory, ServerSocket(8080), new HTTPServerParams);
-
-        s.start();
-        cout << "Server started" << endl;
-
-        waitForTerminationRequest(); // wait for CTRL-C or kill
-
-        cout << "Shutting down..." << endl;
-        s.stop();
-
-        return Application::EXIT_OK;
-    }
-};
-
 class WebServer
 {
 public:
