@@ -1,12 +1,15 @@
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <filesystem>
+#include <algorithm>
+
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "misc/freetype/imgui_freetype.h"
 #include <GLFW/glfw3.h>
-#include <iostream>
-#include <vector>
-#include <chrono>
-#include <filesystem>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
