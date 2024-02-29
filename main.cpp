@@ -236,7 +236,7 @@ public:
                 const auto &ips = m.second.addressList();
                 for (const auto &ipa : ips)
                 {
-                    if (ipa.get<0>().family() == Poco::Net::AddressFamily::IPv4)
+                    if (ipa.get<0>().family() == Poco::Net::AddressFamily::IPv4 && !ipa.get<0>().isLoopback())
                     {
                         localIP = ipa.get<0>().toString();
                         // Retorna o primeiro endereço IP não-loopback encontrado
