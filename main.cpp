@@ -999,27 +999,28 @@ int main()
 
             // Calculate video aspect ratio
             float videoAspectRatio = (float)videoWidth / (float)videoHeight;
+            float windowAspectRatio = windowSize.x / windowSize.y;
 
             // Calculate image size based on video and window aspect ratio
             ImVec2 imageSize;
-            if (windowSize.x / windowSize.y > videoAspectRatio)
+            ImVec2 imagePos;
+
+            if (videoAspectRatio > windowAspectRatio)
             {
-                // Window is wider than video
-                imageSize.x = windowSize.y * videoAspectRatio;
-                imageSize.y = windowSize.y;
+                // Imagem é mais larga que a área disponível
+                imageSize.x = windowSize.y * videoAspectRatio;    // Ajusta a largura baseado na altura da janela
+                imageSize.y = windowSize.y;                       // Altura preenche a janela
+                imagePos.x = (windowSize.x - imageSize.x) * 0.5f; // Centraliza horizontalmente
+                imagePos.y = 0;                                   // Começa do topo da janela
             }
             else
             {
-                // Window is taller than video
-                imageSize.x = windowSize.x;
-                imageSize.y = windowSize.x / videoAspectRatio;
+                // Imagem é mais alta que a área disponível
+                imageSize.x = windowSize.x;                       // Largura preenche a janela
+                imageSize.y = windowSize.x / videoAspectRatio;    // Ajusta a altura baseado na largura da janela
+                imagePos.x = 0;                                   // Começa da lateral esquerda da janela
+                imagePos.y = (windowSize.y - imageSize.y) * 0.5f; // Centraliza verticalmente
             }
-
-            // Calculate position to center the image in the window
-            ImVec2 imagePos = ImVec2(
-                ImGui::GetCursorPos().x + (windowSize.x - imageSize.x) * 0.5f, // X position for centering
-                ImGui::GetCursorPos().y + (windowSize.y - imageSize.y) * 0.5f  // Y position for centering
-            );
 
             // Apply calculated position
             ImGui::SetCursorPos(imagePos);
