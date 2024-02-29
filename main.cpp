@@ -230,23 +230,27 @@ public:
 
         for (const auto &m : map)
         {
-            // Procura por uma interface de rede IPv4 que não seja loopback (127.0.0.1) e esteja ativa
-            if (!m.second.isLoopback() && m.second.supportsIPv4())
+            // Procura por uma interface de rede IPv4 que não seja loopback (127.0.0.1), esteja ativa e não seja um gateway
+            if (!m.second.isLoopback() && m.second.supportsIPv4() && m.second.isUp())
             {
                 const auto &ips = m.second.addressList();
                 for (const auto &ipa : ips)
                 {
-                    if (ipa.get<0>().family() == Poco::Net::AddressFamily::IPv4 && !ipa.get<0>().isLoopback())
+                    if (ipa.get<0>().family() == Poco::Net::AddressFamily::IPv4)
                     {
-                        localIP = ipa.get<0>().toString();
-                        // Retorna o primeiro endereço IP não-loopback encontrado
-                        return localIP;
+                        Poco::Net::IPAddress ip = ipa.get<0>();
+                        if (!ip.isLoopback() && !ip.isWildcard() && ip.isUnicast() && !ip.isBroadcast())
+                        {
+                            localIP = ip.toString();
+                            // Retorna o primeiro endereço IP válido encontrado que não é um gateway
+                            return localIP;
+                        }
                     }
                 }
             }
         }
 
-        // Retorna o endereço loopback caso não encontre um endereço externo
+        // Retorna o endereço loopback caso não encontre um endereço externo válido
         return localIP;
     }
 };
